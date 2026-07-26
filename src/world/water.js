@@ -181,13 +181,15 @@ export class River {
     if (dayNight && dayNight.state) {
       const s = dayNight.state;
       u.uSunDir.value.copy(dayNight.state.sunEl < -3 ? dayNight.moonWorld : dayNight.sunWorld);
-      u.uSunColor.value.copy(s.sun).multiplyScalar(clamp(s.sunI / 3.0, 0.06, 1.1));
+      // 夜里主光是月，别让水面炸成一条白带
+      const night = clamp(dayNight.lanternLevel, 0, 1);
+      u.uSunColor.value.copy(s.sun)
+        .multiplyScalar(clamp(s.sunI / 5.5, 0.05, 1.05) * (1 - night * 0.80));
       u.uSkyLow.value.copy(s.hor);
       u.uSkyHigh.value.copy(s.zen);
-      const night = clamp(1 - s.sunI / 1.4, 0, 1);
-      u.uDeep.value.setRGB(0.055, 0.13, 0.135).lerp(new THREE.Color(0.02, 0.035, 0.07), night);
-      u.uShallow.value.setRGB(0.14, 0.30, 0.26).lerp(new THREE.Color(0.05, 0.09, 0.15), night);
-      u.uFoam.value.setRGB(0.94, 0.97, 0.98).lerp(new THREE.Color(0.55, 0.65, 0.85), night);
+      u.uDeep.value.setRGB(0.055, 0.13, 0.135).lerp(new THREE.Color(0.012, 0.024, 0.055), night);
+      u.uShallow.value.setRGB(0.14, 0.30, 0.26).lerp(new THREE.Color(0.030, 0.055, 0.10), night);
+      u.uFoam.value.setRGB(0.94, 0.97, 0.98).lerp(new THREE.Color(0.13, 0.20, 0.34), night);
     }
   }
 }

@@ -17,7 +17,7 @@ export class Engine {
       stencil: false,
       alpha: false,
     });
-    this.renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+    this.renderer.setPixelRatio(Math.min(devicePixelRatio, 1.75));
     this.renderer.setSize(innerWidth, innerHeight);
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFShadowMap;
@@ -50,7 +50,7 @@ export class Engine {
     // 主光：太阳 / 月亮
     this.sun = new THREE.DirectionalLight(0xffe6bd, 3.0);
     this.sun.castShadow = true;
-    this.sun.shadow.mapSize.set(3072, 3072);
+    this.sun.shadow.mapSize.set(2048, 2048);
     const d = 86;
     this.sun.shadow.camera.left = -d;
     this.sun.shadow.camera.right = d;
@@ -113,6 +113,8 @@ export class Engine {
     this.bloom = new UnrealBloomPass(new THREE.Vector2(size.x, size.y), 0.62, 0.62, 0.72);
     this.composer.addPass(this.bloom);
 
+    this.godRay.setSize(w, h);
+
     // 调色 + 暗角 + 颗粒 + 色散 + 色调映射输出
     this.grade = new GradePass();
     this.grade.renderToScreen = true;
@@ -123,7 +125,7 @@ export class Engine {
     const w = innerWidth, h = innerHeight;
     this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
-    const pr = Math.min(devicePixelRatio, 2) * this.renderScale;
+    const pr = Math.min(devicePixelRatio, 1.75) * this.renderScale;
     this.renderer.setPixelRatio(pr);
     this.renderer.setSize(w, h);
     this.composer.setPixelRatio(pr);
@@ -143,8 +145,8 @@ export class Engine {
       if (this._perfSamples.length > 6) this._perfSamples.shift();
       if (this._perfSamples.length >= 5) {
         const avg = this._perfSamples.reduce((a, b) => a + b, 0) / this._perfSamples.length;
-        if (avg < 34 && this.renderScale > 0.62) {
-          this.renderScale = Math.max(0.62, this.renderScale - 0.14);
+        if (avg < 34 && this.renderScale > 0.55) {
+          this.renderScale = Math.max(0.55, this.renderScale - 0.16);
           this._perfSamples.length = 0;
           this.resize();
         } else if (avg > 57 && this.renderScale < 1.0) {

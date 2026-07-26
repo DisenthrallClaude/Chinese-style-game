@@ -12,12 +12,9 @@ const godRayShader = {
     tDiffuse: { value: null },
     tDepth: { value: null },
     uSunScreen: { value: new THREE.Vector2(0.5, 0.8) },
-    uIntensity: { value: 0.85 },
-    uDecay: { value: 0.955 },
-    uDensity: { value: 0.72 },
-    uWeight: { value: 0.32 },
-    uSunColor: { value: new THREE.Color(1.0, 0.86, 0.66) },
-    uVisible: { value: 1.0 },
+    uDecay: { value: 0.958 },
+    uDensity: { value: 0.78 },
+    uWeight: { value: 0.34 },
     uThreshold: { value: 0.55 },
   },
   vertexShader: /* glsl */`
@@ -27,18 +24,17 @@ const godRayShader = {
       gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
     }
   `,
+  // 低分辨率下算光柱：只输出一张灰度的「光量图」
   fragmentShader: /* glsl */`
     precision highp float;
     uniform sampler2D tDiffuse;
     uniform sampler2D tDepth;
     uniform vec2  uSunScreen;
-    uniform float uIntensity, uDecay, uDensity, uWeight, uVisible, uThreshold;
-    uniform vec3  uSunColor;
+    uniform float uDecay, uDensity, uWeight, uThreshold;
     varying vec2 vUv;
 
-    const int SAMPLES = 48;
+    const int SAMPLES = 26;
 
-    // 只有「天空」像素才能当光源；亮度越高贡献越大
     float lightMask(vec2 uv) {
       float d = texture2D(tDepth, uv).x;
       float sky = step(0.99995, d);
@@ -48,65 +44,140 @@ const godRayShader = {
     }
 
     void main() {
-      vec4 base = texture2D(tDiffuse, vUv);
-      if (uVisible <= 0.001 || uIntensity <= 0.001) { gl_FragColor = base; return; }
-
       vec2 delta = (vUv - uSunScreen) * (uDensity / float(SAMPLES));
       vec2 uv = vUv;
       float illum = 1.0;
       float accum = 0.0;
       for (int i = 0; i < SAMPLES; i++) {
         uv -= delta;
-        vec2 cuv = clamp(uv, vec2(0.0), vec2(1.0));
-        accum += lightMask(cuv) * illum * uWeight;
+        accum += lightMask(clamp(uv, vec2(0.0), vec2(1.0))) * illum * uWeight;
         illum *= uDecay;
       }
-      accum /= float(SAMPLES) * 0.42;
+      accum /= float(SAMPLES) * 0.40;
+      gl_FragColor = vec4(vec3(accum), 1.0);
+    }
+  `,
+};
 
-      // 距太阳越远衰减越快，避免整屏发白
+const godRayCompose = {
+  uniforms: {
+    tDiffuse: { value: null },
+    tRays: { value: null },
+    uSunScreen: { value: new THREE.Vector2(0.5, 0.8) },
+    uRayTexel: { value: new THREE.Vector2(0.01, 0.01) },
+    uIntensity: { value: 0.85 },
+    uSunColor: { value: new THREE.Color(1.0, 0.86, 0.66) },
+    uVisible: { value: 1.0 },
+  },
+  vertexShader: /* glsl */`
+    varying vec2 vUv;
+    void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }
+  `,
+  fragmentShader: /* glsl */`
+    precision highp float;
+    uniform sampler2D tDiffuse, tRays;
+    uniform vec2  uSunScreen;
+    uniform vec2  uRayTexel;
+    uniform float uIntensity, uVisible;
+    uniform vec3  uSunColor;
+    varying vec2 vUv;
+    void main() {
+      vec4 base = texture2D(tDiffuse, vUv);
+      if (uVisible <= 0.001 || uIntensity <= 0.001) { gl_FragColor = base; return; }
+      // 低分辨率的光量图做一次轻微的十字模糊，抹掉块状
+      vec2 px = uRayTexel;
+      float r = texture2D(tRays, vUv).r * 0.4
+              + texture2D(tRays, vUv + vec2(px.x, 0.0)).r * 0.15
+              + texture2D(tRays, vUv - vec2(px.x, 0.0)).r * 0.15
+              + texture2D(tRays, vUv + vec2(0.0, px.y)).r * 0.15
+              + texture2D(tRays, vUv - vec2(0.0, px.y)).r * 0.15;
       float dist = length((vUv - uSunScreen) * vec2(1.0, 0.72));
       float falloff = exp(-dist * 1.55);
-
-      vec3 rays = uSunColor * accum * uIntensity * uVisible * (0.35 + falloff);
-      gl_FragColor = vec4(base.rgb + rays, base.a);
+      gl_FragColor = vec4(base.rgb + uSunColor * r * uIntensity * uVisible * (0.35 + falloff), base.a);
     }
   `,
 };
 
 export class GodRayPass extends Pass {
-  constructor() {
+  constructor(scale = 0.25) {
     super();
-    this.material = new THREE.ShaderMaterial({
+    this.scale = scale;
+    this.rt = new THREE.WebGLRenderTarget(2, 2, {
+      type: THREE.HalfFloatType,
+      depthBuffer: false,
+      colorSpace: THREE.LinearSRGBColorSpace,
+    });
+    this.rt.texture.minFilter = THREE.LinearFilter;
+    this.rt.texture.magFilter = THREE.LinearFilter;
+
+    this.rayMat = new THREE.ShaderMaterial({
       uniforms: THREE.UniformsUtils.clone(godRayShader.uniforms),
       vertexShader: godRayShader.vertexShader,
       fragmentShader: godRayShader.fragmentShader,
-      depthTest: false,
-      depthWrite: false,
+      depthTest: false, depthWrite: false,
     });
-    this.uniforms = this.material.uniforms;
-    this.fsQuad = new FullScreenQuad(this.material);
+    this.composeMat = new THREE.ShaderMaterial({
+      uniforms: THREE.UniformsUtils.clone(godRayCompose.uniforms),
+      vertexShader: godRayCompose.vertexShader,
+      fragmentShader: godRayCompose.fragmentShader,
+      depthTest: false, depthWrite: false,
+    });
+    // 对外暴露一组统一的可写 uniform
+    this.uniforms = {
+      uSunScreen: this.composeMat.uniforms.uSunScreen,
+      uIntensity: this.composeMat.uniforms.uIntensity,
+      uSunColor: this.composeMat.uniforms.uSunColor,
+      uVisible: this.composeMat.uniforms.uVisible,
+      uThreshold: this.rayMat.uniforms.uThreshold,
+      uDensity: this.rayMat.uniforms.uDensity,
+      uDecay: this.rayMat.uniforms.uDecay,
+      uWeight: this.rayMat.uniforms.uWeight,
+    };
+    this.rayQuad = new FullScreenQuad(this.rayMat);
+    this.composeQuad = new FullScreenQuad(this.composeMat);
     this.needsSwap = true;
   }
 
-  setSize() {}
+  setSize(w, h) {
+    const rw = Math.max(2, Math.floor(w * this.scale));
+    const rh = Math.max(2, Math.floor(h * this.scale));
+    this.rt.setSize(rw, rh);
+    this.composeMat.uniforms.uRayTexel.value.set(1 / rw, 1 / rh);
+  }
 
   render(renderer, writeBuffer, readBuffer) {
-    this.uniforms.tDiffuse.value = readBuffer.texture;
-    this.uniforms.tDepth.value = readBuffer.depthTexture;
-    if (!readBuffer.depthTexture) {
-      // 没有深度纹理就直接透传，避免黑屏
-      this.uniforms.uIntensity.value = 0;
-    }
-    if (this.renderToScreen) {
-      renderer.setRenderTarget(null);
+    const iu = this.composeMat.uniforms.uIntensity.value;
+    const vu = this.composeMat.uniforms.uVisible.value;
+    if (iu <= 0.001 || vu <= 0.001 || !readBuffer.depthTexture) {
+      this.composeMat.uniforms.tDiffuse.value = readBuffer.texture;
+      this.composeMat.uniforms.tRays.value = this.rt.texture;
+      this.composeMat.uniforms.uVisible.value = 0;
     } else {
+      // 1) 低分辨率算光量图
+      this.rayMat.uniforms.tDiffuse.value = readBuffer.texture;
+      this.rayMat.uniforms.tDepth.value = readBuffer.depthTexture;
+      this.rayMat.uniforms.uSunScreen.value.copy(this.composeMat.uniforms.uSunScreen.value);
+      renderer.setRenderTarget(this.rt);
+      renderer.clear();
+      this.rayQuad.render(renderer);
+      this.composeMat.uniforms.tDiffuse.value = readBuffer.texture;
+      this.composeMat.uniforms.tRays.value = this.rt.texture;
+    }
+    // 2) 全分辨率合成
+    if (this.renderToScreen) renderer.setRenderTarget(null);
+    else {
       renderer.setRenderTarget(writeBuffer);
       if (this.clear) renderer.clear();
     }
-    this.fsQuad.render(renderer);
+    this.composeQuad.render(renderer);
+    this.composeMat.uniforms.uVisible.value = vu;
   }
 
-  dispose() { this.material.dispose(); this.fsQuad.dispose(); }
+  dispose() {
+    this.rayMat.dispose(); this.composeMat.dispose();
+    this.rayQuad.dispose(); this.composeQuad.dispose();
+    this.rt.dispose();
+  }
 }
 
 /* ==================================================================
@@ -124,7 +195,7 @@ const gradeShader = {
     uLift: { value: new THREE.Color(0.020, 0.030, 0.055) },   // 阴影偏冷
     uGain: { value: new THREE.Color(1.045, 1.005, 0.955) },   // 高光偏暖
     uVignette: { value: 0.42 },
-    uGrain: { value: 0.026 },
+    uGrain: { value: 0.013 },
     uAberration: { value: 0.0016 },
     uBleach: { value: 0.0 },
     uFlash: { value: new THREE.Color(0, 0, 0) },
@@ -218,7 +289,7 @@ const gradeShader = {
 
       // 胶片颗粒
       float g = hash(gl_FragCoord.xy + fract(uTime) * 137.0) - 0.5;
-      col += g * uGrain * (1.0 - l * 0.65);
+      col += g * uGrain * (0.35 + l * 0.65);
 
       gl_FragColor = vec4(toSRGB(clamp(col, 0.0, 1.0)), 1.0);
     }

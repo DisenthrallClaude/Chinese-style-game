@@ -30,7 +30,8 @@ try {
     supply:G.towers.supply, demand:G.towers.demand,
     powered:G.towers.towers.filter(t=>t.powered).length, towers:G.towers.towers.length,
     dmg:Math.round(G.towers.towers.reduce((a,t)=>a+t.damageDone,0)),
-    fps:Math.round(window.SHANHAI.engine.fps)
+    fps:Math.round(window.SHANHAI.engine.fps), waveTimer:+G.waveTimer.toFixed(1),
+    frames:window.__N||0, err:window.__ERR||null
   }})()`);
   logs.push('[state] ' + JSON.stringify(st));
 } catch (e) { logs.push('[stateerr] ' + e.message.slice(0,300)); }

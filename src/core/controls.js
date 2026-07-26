@@ -7,13 +7,13 @@ export class CameraRig {
     this.camera = camera;
     this.dom = dom;
 
-    this.target = new THREE.Vector3(0, 6, -26);
+    this.target = new THREE.Vector3(0, 8, -28);
     this.desired = this.target.clone();
     this.yaw = 0;
-    this.pitch = 0.325;
-    this.dist = 152;
-    this.dYaw = 0; this.dPitch = 0.325; this.dDist = 152;
-    this.home = { target: new THREE.Vector3(0, 6, -26), yaw: 0, pitch: 0.325, dist: 152 };
+    this.pitch = 0.352;
+    this.dist = 160;
+    this.dYaw = 0; this.dPitch = 0.352; this.dDist = 160;
+    this.home = { target: new THREE.Vector3(0, 8, -28), yaw: 0, pitch: 0.352, dist: 160 };
 
     this.minDist = 26; this.maxDist = 260;
     this.minPitch = 0.055; this.maxPitch = 1.18;

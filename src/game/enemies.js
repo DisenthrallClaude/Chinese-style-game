@@ -140,11 +140,11 @@ export class EnemyManager {
       const gate = p === PATHS.left ? GATES[0] : GATES[1];
       x = lerp(gate.x, HEART.x, t) + e.lateral * 1.4;
       z = lerp(gate.z, HEART.z, t);
-      const g = this.terrain.heightAt(x, z);
+      const g = this.terrain.heightFast(x, z);
       y = Math.max(g, lerp(gate.y || 24, 2, t)) + e.flyH + Math.sin(e.bob + performance.now() * 0.0016) * 0.9;
       e.angle = Math.atan2(HEART.x - x, HEART.z - z);
     } else {
-      y = this.terrain.heightAt(x, z);
+      y = this.terrain.heightFast(x, z);
       e.angle = Math.atan2(tx, tz);
     }
     e.x = x; e.y = y; e.z = z;

@@ -318,27 +318,29 @@ export class Village {
         y + 1.05, { h: 0.9, mat: 'woodRed', panel: 'latticeIce', postEvery: 2.4 });
     }
     // 古树
-    const trunkH = 13;
+    const trunkH = 19;
     for (let i = 0; i < 5; i++) {
       const a = (i / 5) * Math.PI * 2;
-      B.add('woodDark', beam(x + Math.cos(a) * 1.5, y + 1.0, z + Math.sin(a) * 1.5,
-        x + Math.cos(a) * 0.35, y + 4.2, z + Math.sin(a) * 0.35, 0.7, 0.7, 0.5));
+      B.add('woodDark', beam(x + Math.cos(a) * 2.3, y + 1.0, z + Math.sin(a) * 2.3,
+        x + Math.cos(a) * 0.5, y + 5.6, z + Math.sin(a) * 0.5, 1.0, 1.0, 0.5));
     }
-    B.add('woodDark', T(cyl(0.85, 1.5, trunkH, 12, 0.45), x, y + 1.0 + trunkH / 2, z));
+    B.add('woodDark', T(cyl(1.15, 2.1, trunkH, 14, 0.45), x, y + 1.0 + trunkH / 2, z));
     const rng = new Rng(88);
     for (let i = 0; i < 7; i++) {
       const a = rng.range(0, Math.PI * 2), t = rng.range(0.5, 0.95);
-      const bl = rng.range(3.5, 6.0);
+      const bl = rng.range(5.0, 8.5);
       B.add('woodDark', beam(x, y + 1 + trunkH * t, z,
-        x + Math.cos(a) * bl, y + 1 + trunkH * t + bl * 0.55, z + Math.sin(a) * bl, 0.34, 0.34, 0.6));
+        x + Math.cos(a) * bl, y + 1 + trunkH * t + bl * 0.55, z + Math.sin(a) * bl, 0.46, 0.46, 0.6));
     }
     // 树冠
-    for (let i = 0; i < 16; i++) {
-      const a = rng.range(0, Math.PI * 2), rr = Math.pow(rng.next(), 0.5) * 6.2;
-      const s = rng.range(4.2, 6.6);
-      B.add('leafC', T(plane(s, s, 1 / s),
-        x + Math.cos(a) * rr, y + trunkH + rng.range(-1.2, 3.4), z + Math.sin(a) * rr,
-        rng.range(-0.4, 0.4), rng.range(0, 6.28), rng.range(-0.3, 0.3)));
+    for (let i = 0; i < 58; i++) {
+      const a = rng.range(0, Math.PI * 2);
+      const rr = Math.pow(rng.next(), 0.55) * 8.6;
+      const s = rng.range(2.6, 4.6) * (1 - rr / 14);
+      const yy = y + trunkH + rng.range(-3.0, 5.0) - rr * 0.26;
+      B.add(rng.chance(0.5) ? 'leafC' : 'leaf', T(plane(s, s, 1 / s),
+        x + Math.cos(a) * rr, yy, z + Math.sin(a) * rr,
+        rng.range(-0.5, 0.5), rng.range(0, 6.28), rng.range(-0.4, 0.4)));
     }
     // 祈愿红绸
     for (let i = 0; i < 10; i++) {

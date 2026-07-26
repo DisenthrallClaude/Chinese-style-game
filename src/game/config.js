@@ -27,13 +27,13 @@ export function elementMult(atk, def) {
 export const TOWERS = [
   {
     id: 'crossbow', name: '连弩机', el: 'wood', kind: 'single', hotkey: '1',
-    cost: 60, power: 5, range: 22, dmg: 12, rate: 2.0, projSpeed: 90,
+    cost: 55, power: 5, range: 24, dmg: 15, rate: 2.05, projSpeed: 90,
     link: 0, glyph: '弩',
     desc: '连发短矢，射速极快。造价低廉，是护住第一道弯的骨干。',
     up: [
-      { dmg: 12, rate: 2.0, range: 22, power: 5 },
-      { dmg: 21, rate: 2.4, range: 24, power: 8, cost: 55 },
-      { dmg: 36, rate: 2.9, range: 27, power: 12, cost: 120 },
+      { dmg: 15, rate: 2.05, range: 24, power: 5 },
+      { dmg: 26, rate: 2.45, range: 26, power: 8, cost: 55 },
+      { dmg: 44, rate: 2.95, range: 29, power: 12, cost: 118 },
     ],
     upName: ['一阶 · 单弩', '二阶 · 三连弩', '三阶 · 诸葛连弩'],
   },
@@ -99,34 +99,34 @@ export const TOWERS = [
   },
   {
     id: 'wheel', name: '水车', el: 'none', kind: 'gen', hotkey: '7',
-    cost: 70, power: -26, range: 0, link: 27, needs: 'water', glyph: '水',
+    cost: 70, power: -30, range: 0, link: 30, needs: 'water', glyph: '水',
     desc: '临溪而立，昼夜不息地吐出机力。只能架在溪畔，是整张机关网的源头。',
     up: [
-      { power: -26, link: 27 },
-      { power: -44, link: 30, cost: 65 },
-      { power: -70, link: 34, cost: 140 },
+      { power: -30, link: 30 },
+      { power: -50, link: 33, cost: 65 },
+      { power: -78, link: 37, cost: 140 },
     ],
     upName: ['一阶 · 立轮', '二阶 · 双轮', '三阶 · 连磨大轮'],
   },
   {
     id: 'windmill', name: '风车', el: 'none', kind: 'gen', hotkey: '8',
-    cost: 100, power: -20, range: 0, link: 25, needs: 'open', glyph: '风',
+    cost: 100, power: -23, range: 0, link: 27, needs: 'open', glyph: '风',
     desc: '八面受风，何处皆可立。出力略逊水车，胜在不挑地方。',
     up: [
-      { power: -20, link: 25 },
-      { power: -34, link: 28, cost: 92 },
-      { power: -54, link: 32, cost: 200 },
+      { power: -23, link: 27 },
+      { power: -38, link: 30, cost: 92 },
+      { power: -60, link: 34, cost: 200 },
     ],
     upName: ['一阶 · 四扇', '二阶 · 六扇', '三阶 · 八扇'],
   },
   {
     id: 'relay', name: '传动枢', el: 'none', kind: 'relay', hotkey: '9',
-    cost: 32, power: 1, range: 0, link: 24, glyph: '枢',
+    cost: 26, power: 1, range: 0, link: 26, glyph: '枢',
     desc: '一根立轴、几副齿轮，把机力接到远处。网断了，机关就都停了。',
     up: [
-      { power: 1, link: 24 },
-      { power: 2, link: 30, cost: 40 },
-      { power: 3, link: 37, cost: 90 },
+      { power: 1, link: 26 },
+      { power: 2, link: 32, cost: 38 },
+      { power: 3, link: 39, cost: 86 },
     ],
     upName: ['一阶 · 立轴', '二阶 · 长轴', '三阶 · 通天轴'],
   },
@@ -137,23 +137,23 @@ export const TOWER_BY_ID = Object.fromEntries(TOWERS.map(t => [t.id, t]));
 /* ---------------------------------------------------------------- 凶兽谱 */
 export const ENEMIES = {
   huan: {
-    id: 'huan', name: '讙', el: 'wood', hp: 130, speed: 7.2, armor: 0, bounty: 8,
+    id: 'huan', name: '讙', el: 'wood', hp: 108, speed: 7.2, armor: 0, bounty: 8,
     scale: 0.85, body: 0x9ab566, accent: 0xe8e0b0, kind: 'ground',
     desc: '状如狸而一目三尾，其行如风。',
   },
   yayu: {
-    id: 'yayu', name: '猰貐', el: 'earth', hp: 300, speed: 4.2, armor: 2, bounty: 13,
+    id: 'yayu', name: '猰貐', el: 'earth', hp: 265, speed: 4.2, armor: 2, bounty: 13,
     scale: 1.05, body: 0xb08a56, accent: 0xf0d090, kind: 'ground',
     desc: '龙首兽身，食人，走谷如走平地。',
   },
   luoyu: {
-    id: 'luoyu', name: '蠃鱼', el: 'water', hp: 240, speed: 5.6, armor: 0, bounty: 12,
+    id: 'luoyu', name: '蠃鱼', el: 'water', hp: 215, speed: 5.6, armor: 0, bounty: 12,
     scale: 0.95, body: 0x5c9ab4, accent: 0xc0f0ff, kind: 'ground',
     traits: ['aquatic'],
     desc: '鱼身而鸟翼，所过之处必有大水。',
   },
   qitu: {
-    id: 'qitu', name: '鵸鵌', el: 'wood', hp: 175, speed: 8.0, armor: 0, bounty: 14,
+    id: 'qitu', name: '鵸鵌', el: 'wood', hp: 158, speed: 8.0, armor: 0, bounty: 14,
     scale: 0.8, body: 0x7fae6a, accent: 0xfff0a0, kind: 'air',
     desc: '三首六尾之鸟，掠空而来，不循兽道。',
   },
@@ -218,8 +218,8 @@ const W = (name, night, groups) => ({ name, night, groups });
 const G = (id, count, gap = 0.9, delay = 0, gate = 2) => ({ id, count, gap, delay, gate });
 
 export const WAVES = [
-  W('探路之兽', false, [G('huan', 6, 1.1, 0, 0)]),
-  W('林中疾影', false, [G('huan', 8, 0.85, 0, 2)]),
+  W('探路之兽', false, [G('huan', 5, 1.4, 0, 0)]),
+  W('林中疾影', false, [G('huan', 7, 1.0, 0, 2)]),
   W('土行之属', false, [G('yayu', 5, 1.3, 0, 0), G('huan', 6, 0.8, 3, 1)]),
   W('溯溪而上', false, [G('luoyu', 7, 1.0, 0, 2), G('yayu', 4, 1.4, 5, 0)]),
   W('鸟道横空', true, [G('qitu', 8, 0.8, 0, 2), G('huan', 8, 0.7, 4, 2)]),
@@ -276,11 +276,11 @@ export const SKILLS = [
 
 /* ---------------------------------------------------------------- 常量 */
 export const RULES = {
-  startGold: 340,
+  startGold: 480,
   startHeart: 20,
   sellRatio: 0.62,
-  waveGoldBase: 42,
-  waveGoldPerWave: 9,
+  waveGoldBase: 58,
+  waveGoldPerWave: 12,
   minEfficiency: 0.22,
   nightHpMult: 1.14,
   nightSpeedMult: 1.06,

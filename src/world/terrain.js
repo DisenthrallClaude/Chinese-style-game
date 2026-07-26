@@ -136,6 +136,33 @@ export class Terrain {
     return 1 - smoothstep(-1.5, 9.0, d);
   }
 
+  // 预烘一张高度查询表，供每帧的怪物落地与光标求交使用
+  buildLUT(half = 168, step = 1.5) {
+    const n = Math.ceil((half * 2) / step) + 1;
+    const arr = new Float32Array(n * n);
+    for (let j = 0; j < n; j++) {
+      const z = -half + j * step;
+      for (let i = 0; i < n; i++) {
+        arr[j * n + i] = this.heightAt(-half + i * step, z);
+      }
+    }
+    this._lut = { arr, n, half, step };
+    return this;
+  }
+
+  // 双线性采样；出表则回落到解析求值
+  heightFast(x, z) {
+    const L = this._lut;
+    if (!L) return this.heightAt(x, z);
+    const fx = (x + L.half) / L.step, fz = (z + L.half) / L.step;
+    if (fx < 0 || fz < 0 || fx >= L.n - 1 || fz >= L.n - 1) return this.heightAt(x, z);
+    const i = fx | 0, j = fz | 0;
+    const tx = fx - i, tz = fz - j;
+    const a = L.arr[j * L.n + i], b = L.arr[j * L.n + i + 1];
+    const c = L.arr[(j + 1) * L.n + i], d = L.arr[(j + 1) * L.n + i + 1];
+    return (a * (1 - tx) + b * tx) * (1 - tz) + (c * (1 - tx) + d * tx) * tz;
+  }
+
   normalAt(x, z, eps = 0.9) {
     const hL = this.heightAt(x - eps, z), hR = this.heightAt(x + eps, z);
     const hD = this.heightAt(x, z - eps), hU = this.heightAt(x, z + eps);
@@ -251,8 +278,8 @@ export class Terrain {
           vec3 blended = cg * w.r + cs * w.g + cr * w.b;
           // 大尺度色彩变化，打散平铺感
           vec3 macro = texture2D(tMacro, wuv * 0.0043).rgb;
-          blended *= mix(vec3(0.80), vec3(1.22), macro.r);
-          blended *= mix(vec3(1.0, 1.0, 1.0), vec3(1.06, 1.02, 0.90), macro.g);
+          blended *= mix(vec3(0.68), vec3(1.34), macro.r);
+          blended *= mix(vec3(0.94, 1.0, 0.92), vec3(1.12, 1.02, 0.84), macro.g);
           diffuseColor.rgb *= blended;
         `);
       this._terrainShader = shader;
@@ -277,6 +304,7 @@ export class Terrain {
     this.group.add(this.outerMesh);
 
     this._buildPlaza();
+    this.buildLUT();
     return this;
   }
 

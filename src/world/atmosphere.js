@@ -43,7 +43,7 @@ const mistFrag = /* glsl */`
     // 水平雾片：平视时厚、俯视时薄，才像一层浮在谷中的雾带
     float graze = pow(1.0 - min(1.0, abs(vd.y)), 3.0);
     float d = distance(uCameraP, vWorld);
-    float near = smoothstep(30.0, 120.0, d);
+    float near = smoothstep(60.0, 190.0, d);
     float alpha = a * a * uOpacity * vFade * near * mix(0.02, 1.0, graze);
     if (alpha < 0.004) discard;
     gl_FragColor = vec4(uColor, alpha);

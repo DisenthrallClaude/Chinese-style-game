@@ -109,6 +109,7 @@ function buildModel(id, level, M) {
     // 悬浮玉环
     for (let i = 0; i <= lv + 1; i++) {
       const r = new THREE.Mesh(torus(0.85 - i * 0.14, 0.075, 6, 22, 1.0), M.gold);
+      r.castShadow = false;
       r.position.y = 1.1 + i * 0.42;
       r.rotation.x = Math.PI / 2;
       turret.add(r);
@@ -150,6 +151,7 @@ function buildModel(id, level, M) {
     push(metal, T(cyl(0.24, 0.34, 3.4 + lv * 0.5, 10, 0.7), 0, 2.0 + lv * 0.25, 0));
     for (let i = 0; i <= lv + 1; i++) {
       const c = new THREE.Mesh(torus(0.55 - i * 0.05, 0.09, 6, 18, 0.8), M.bronze);
+      c.castShadow = false;
       c.position.y = 1.5 + i * 0.85;
       c.rotation.x = Math.PI / 2;
       turret.add(c);
@@ -184,6 +186,7 @@ function buildModel(id, level, M) {
     turret.add(wm);
     spins.push({ o: wm, axis: 'z', sp: 1.1 });
     const gr = new THREE.Mesh(gearGeo(0.55, 10, 0.16), M.iron);
+    gr.castShadow = false;
     gr.position.set(0.95, 1.5, 0);
     turret.add(gr);
     spins.push({ o: gr, axis: 'z', sp: -2.6 });
@@ -214,6 +217,7 @@ function buildModel(id, level, M) {
     push(wood, T(box(1.6, 0.16, 0.16, 0.8), 0, 2.2 + lv * 0.4, 0));
     for (let i = 0; i <= lv; i++) {
       const gr = new THREE.Mesh(gearGeo(0.46 + i * 0.08, 10 + i * 2, 0.14), i % 2 ? M.iron : M.woodDark);
+      gr.castShadow = false;
       gr.position.set(i % 2 ? 0.5 : -0.5, 1.6 + i * 0.55, 0);
       turret.add(gr);
       spins.push({ o: gr, axis: 'z', sp: (i % 2 ? -1 : 1) * (2.0 + i) });

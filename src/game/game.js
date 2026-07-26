@@ -332,7 +332,7 @@ export class Game {
         const d = enemies.damage(e, p.dmg * f, p.el);
         if (p.tower) p.tower.damageDone += d;
       }
-      const gy = this.terrain.heightAt(p.tx, p.tz);
+      const gy = this.terrain.heightFast(p.tx, p.tz);
       this.rings.spawn(p.tx, gy + 0.2, p.tz, 0.6, p.splash * 1.5, 0.45, 0xffb060, 0.9);
       this.sparks.emit(p.tx, gy + 0.4, p.tz, 40, {
         speed: 13, color: 0xc09060, color2: 0xffd0a0, size: 8, life: 0.75, gravity: 1.1, up: 1.0,
@@ -364,7 +364,7 @@ export class Game {
 
     if (id === 'bolt') {
       const x = at.x, z = at.z;
-      const gy = this.terrain.heightAt(x, z);
+      const gy = this.terrain.heightFast(x, z);
       for (const e of this.enemies.query(x, z, s.radius)) {
         this.enemies.damage(e, 360, 'metal', { trueDamage: true });
         e.stun = Math.max(e.stun, 1.5);
@@ -382,7 +382,7 @@ export class Game {
       g.uFlash.value.setRGB(0.28, 0.34, 0.45);
     } else if (id === 'freeze') {
       const x = at.x, z = at.z;
-      const gy = this.terrain.heightAt(x, z);
+      const gy = this.terrain.heightFast(x, z);
       for (const e of this.enemies.query(x, z, s.radius)) {
         e.freeze = Math.max(e.freeze, 3.5);
         if (!e.traits.includes('unslowable')) { e.slow = Math.max(e.slow, 0.5); e.slowT = 5.5; }
@@ -595,19 +595,28 @@ export class Game {
     this._ray.setFromCamera(this._pointer, this.camera);
     const dir = this._ray.ray.direction, org = this._ray.ray.origin;
     let hit = null;
-    let prev = org.y - this.terrain.heightAt(org.x, org.z);
-    const STEP = 3.0;
-    for (let d = STEP; d < 460; d += STEP) {
-      const px = org.x + dir.x * d, py = org.y + dir.y * d, pz = org.z + dir.z * d;
-      const gy = this.terrain.heightAt(px, pz);
-      const diff = py - gy;
-      if (diff <= 0 && prev > 0) {
-        const k = prev / (prev - diff);
-        const dd = d - STEP + STEP * k;
-        hit = V.set(org.x + dir.x * dd, gy, org.z + dir.z * dd).clone();
+    const T2 = this.terrain;
+    const at = (d) => {
+      const px = org.x + dir.x * d, pz = org.z + dir.z * d;
+      return (org.y + dir.y * d) - T2.heightFast(px, pz);
+    };
+    const STEP = 7.0;
+    let prev = at(0), d0 = 0;
+    for (let d = STEP; d < 480; d += STEP) {
+      const cur = at(d);
+      if (cur <= 0 && prev > 0) {
+        // 二分细化
+        let lo = d0, hi = d;
+        for (let k = 0; k < 6; k++) {
+          const mid = (lo + hi) / 2;
+          if (at(mid) > 0) lo = mid; else hi = mid;
+        }
+        const dd = (lo + hi) / 2;
+        const px = org.x + dir.x * dd, pz = org.z + dir.z * dd;
+        hit = V.set(px, T2.heightFast(px, pz), pz).clone();
         break;
       }
-      prev = diff;
+      prev = cur; d0 = d;
     }
     if (hit) this.cursorWorld.copy(hit);
 
