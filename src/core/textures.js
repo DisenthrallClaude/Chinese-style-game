@@ -248,7 +248,7 @@ function drawFlagstone(size, opts = {}) {
 
 /* ---------------------------------------------------------------- 山岩 */
 function drawRock(size, opts = {}) {
-  const { base = [136, 132, 124], seed = 41, strata = 7 } = opts;
+  const { base = [108, 106, 103], seed = 41, strata = 7 } = opts;
   const c = mkCanvas(size);
   const ctx = c.getContext('2d');
   px(ctx, size, size, (x, y) => {
@@ -258,11 +258,11 @@ function drawRock(size, opts = {}) {
     band = Math.pow(band, 1.6);
     const detail = noise.tileFbm(x * 3.0, y * 3.0, size, size, 5, 4) * 0.5 + 0.5;
     const coarse = noise.tileFbm(x * 1.1, y * 1.1, size, size, 4, 1.7) * 0.5 + 0.5;
-    let v = lerp(0.62, 1.18, detail * 0.5 + coarse * 0.5) * lerp(0.82, 1.06, band);
+    let v = lerp(0.52, 1.30, detail * 0.5 + coarse * 0.5) * lerp(0.72, 1.12, band);
     let r = base[0] * v, g = base[1] * v, b = base[2] * v;
     // 铁锈渗色
     const rust = smoothstep(0.68, 0.95, noise.tileFbm(x * 0.9 + 300, y * 0.9, size, size, 4, 2) * 0.5 + 0.5);
-    r = lerp(r, 128, rust * 0.35); g = lerp(g, 104, rust * 0.3); b = lerp(b, 78, rust * 0.28);
+    r = lerp(r, 118, rust * 0.40); g = lerp(g, 92, rust * 0.34); b = lerp(b, 66, rust * 0.30);
     // 植被苔痕
     const moss = smoothstep(0.6, 0.95, noise.tileFbm(x * 1.6 + 700, y * 1.6, size, size, 4, 2.6) * 0.5 + 0.5);
     r = lerp(r, 70, moss * 0.42); g = lerp(g, 90, moss * 0.5); b = lerp(b, 52, moss * 0.4);
