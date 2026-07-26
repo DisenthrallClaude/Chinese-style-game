@@ -5,7 +5,9 @@
 一款以《山海经》与**机关术**为骨的 3D 塔防策略游戏，运行在浏览器里，
 **零外部素材** —— 山川、楼阁、水车、齿轮、异兽、纹理、音效，全部在运行时程序化生成。
 
-![风格](docs/style.md)
+在线试玩：**https://disenthrallclaude.github.io/Chinese-style-game/**
+
+视觉基调的拆解见 [docs/style.md](docs/style.md)。
 
 ---
 

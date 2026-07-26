@@ -1,0 +1,51 @@
+name: 部署到 GitHub Pages
+
+on:
+  push:
+    branches: [claude/shanhaijing-game-design-cqp2gj]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: 检出仓库
+        uses: actions/checkout@v4
+
+      - name: 整理静态站点
+        run: |
+          mkdir -p _site
+          cp index.html _site/
+          cp README.md _site/
+          cp -r styles src vendor docs _site/
+          # 关掉 Jekyll，否则以下划线开头的目录会被吞掉
+          touch _site/.nojekyll
+          echo "--- 站点内容 ---"
+          du -sh _site
+          ls -la _site
+
+      - name: 配置 Pages
+        uses: actions/configure-pages@v5
+        with:
+          enablement: true
+
+      - name: 上传构建产物
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+      - name: 部署
+        id: deployment
+        uses: actions/deploy-pages@v4
