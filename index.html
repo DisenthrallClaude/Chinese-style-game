@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+<title>山海机关录 · Shanhai Mechanica</title>
+<meta name="description" content="以《山海经》与机关术为骨的塔防策略游戏 —— 引水为力，铸械为兵，守一谷山川。" />
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%E2%9A%99%EF%B8%8F%3C/text%3E%3C/svg%3E" />
+<link rel="stylesheet" href="styles/ui.css" />
+<script type="importmap">
+{
+  "imports": {
+    "three": "./vendor/three/three.module.js",
+    "three/addons/": "./vendor/three/addons/"
+  }
+}
+</script>
+</head>
+<body>
+
+<div id="viewport"></div>
+
+<!-- ===================== 载入界面 ===================== -->
+<div id="loader">
+  <div class="loader-ink"></div>
+  <div class="loader-core">
+    <div class="seal">山<br>海</div>
+    <h1 class="game-title">山海机关录</h1>
+    <div class="game-subtitle">SHANHAI&nbsp;MECHANICA</div>
+    <div class="loader-bar"><i></i></div>
+    <div class="loader-hint">正在开山凿石…</div>
+    <div class="loader-verse">「引水为力，铸械为兵，守此一谷山川。」</div>
+  </div>
+</div>
+
+<!-- ===================== 开场 ===================== -->
+<div id="startScreen" hidden>
+  <div class="start-inner">
+    <div class="start-mark">機</div>
+    <h1>山海机关录</h1>
+    <p class="start-lead">
+      昆仑之墟东南三百里，有谷曰<b>栖梧</b>。谷民世代以机关术营生，引溪为力，驱轮为兵。<br />
+      然《山海经》所载凶兽破封而出，自山口奔涌而下——
+    </p>
+    <div class="start-cards">
+      <div class="scard"><h3>引水生力</h3><p>水车、风车吐纳<b>机力</b>，经传动枢结成机关网络。断网即停机。</p></div>
+      <div class="scard"><h3>五行相克</h3><p>金木水火土环环相制，对症下药可打出<b>近两倍</b>伤害。</p></div>
+      <div class="scard"><h3>昼夜轮转</h3><p>夜战凶兽更悍，然灯火通明处，机关<b>射速加成</b>。</p></div>
+    </div>
+    <div class="start-actions">
+      <button id="btnStart" class="btn btn-primary">开 · 启 机 关</button>
+      <button id="btnSandbox" class="btn">观 · 山 河（自由视角）</button>
+    </div>
+    <div class="start-keys">
+      <span><kbd>右键拖拽</kbd> 转视角</span>
+      <span><kbd>滚轮</kbd> 推拉</span>
+      <span><kbd>WASD</kbd> 平移</span>
+      <span><kbd>1-9</kbd> 选机关</span>
+      <span><kbd>空格</kbd> 催兵/加速</span>
+    </div>
+  </div>
+</div>
+
+<!-- ===================== 战斗 HUD ===================== -->
+<div id="hud" hidden>
+
+  <!-- 左上：波次与时辰 -->
+  <div class="panel panel-tl" id="statusPanel">
+    <div class="wave-block">
+      <div class="wave-label">波次</div>
+      <div class="wave-num"><span id="waveNum">0</span><small>/<span id="waveMax">24</span></small></div>
+    </div>
+    <div class="status-divider"></div>
+    <div class="status-lines">
+      <div class="stat-row"><span class="ico ico-heart"></span><div class="bar bar-heart"><i id="barHeart"></i></div><b id="txtHeart">20</b></div>
+      <div class="stat-row"><span class="ico ico-power"></span><div class="bar bar-power"><i id="barPower"></i></div><b id="txtPower">0/0</b></div>
+      <div class="stat-row time-row"><span class="ico ico-time"></span><span id="txtTime">辰时</span><span class="spacer"></span><span id="txtFps" class="fps">60</span></div>
+    </div>
+  </div>
+
+  <!-- 右上：资源 + 波次预告 -->
+  <div class="panel panel-tr" id="resPanel">
+    <div class="res-line"><span class="coin"></span><b id="txtGold">0</b><em>灵石</em></div>
+    <div class="next-wave" id="nextWave">
+      <div class="nw-title">下一波 · <span id="nwName">—</span></div>
+      <div class="nw-list" id="nwList"></div>
+    </div>
+  </div>
+
+  <!-- 中上：提示条 -->
+  <div id="toast"></div>
+  <div id="waveBanner"><div class="wb-inner"><span class="wb-num"></span><span class="wb-name"></span></div></div>
+
+  <!-- 右侧：选中机关详情 -->
+  <div class="panel panel-right" id="towerPanel" hidden>
+    <div class="tp-head">
+      <div class="tp-icon" id="tpIcon"></div>
+      <div>
+        <div class="tp-name" id="tpName">—</div>
+        <div class="tp-lv" id="tpLv">一阶</div>
+      </div>
+      <button class="tp-close" id="tpClose">×</button>
+    </div>
+    <div class="tp-stats" id="tpStats"></div>
+    <div class="tp-actions">
+      <button class="btn btn-up" id="btnUpgrade">升阶 <b id="upCost">0</b></button>
+      <button class="btn btn-sell" id="btnSell">拆解 <b id="sellVal">0</b></button>
+    </div>
+  </div>
+
+  <!-- 底部：建造栏 -->
+  <div id="buildBar"></div>
+
+  <!-- 底部右：秘术 + 控制 -->
+  <div id="skillBar"></div>
+  <div id="ctrlBar">
+    <button class="cbtn" id="btnSpeed" title="加速 (空格)">×1</button>
+    <button class="cbtn" id="btnDayNight" title="昼夜切换 (N)">☀</button>
+    <button class="cbtn" id="btnCam" title="视角复位 (R)">◎</button>
+    <button class="cbtn cbtn-go" id="btnWave" title="催兵 (空格)">催 兵</button>
+  </div>
+
+  <!-- 悬浮信息 -->
+  <div id="tip" hidden></div>
+</div>
+
+<!-- ===================== 结算 ===================== -->
+<div id="endScreen" hidden>
+  <div class="end-inner">
+    <div class="end-seal" id="endSeal">終</div>
+    <h1 id="endTitle">山谷失守</h1>
+    <p id="endText"></p>
+    <div class="end-stats" id="endStats"></div>
+    <div class="start-actions">
+      <button id="btnRetry" class="btn btn-primary">重 整 旗 鼓</button>
+    </div>
+  </div>
+</div>
+
+<script type="module" src="src/main.js"></script>
+</body>
+</html>
