@@ -1,14 +1,16 @@
 name: 部署到 GitHub Pages
 
+# Pages 用的是经典的分支模式（source = gh-pages）。
+# 之所以不走 actions/deploy-pages，是因为默认的 GITHUB_TOKEN 没有权限
+# 首次创建 Pages 站点（Resource not accessible by integration）；
+# 而往 gh-pages 分支推送在公开仓库上会自动开启 Pages。
 on:
   push:
     branches: [claude/shanhaijing-game-design-cqp2gj]
   workflow_dispatch:
 
 permissions:
-  contents: read
-  pages: write
-  id-token: write
+  contents: write
 
 concurrency:
   group: pages
@@ -17,9 +19,6 @@ concurrency:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - name: 检出仓库
         uses: actions/checkout@v4
@@ -27,25 +26,20 @@ jobs:
       - name: 整理静态站点
         run: |
           mkdir -p _site
-          cp index.html _site/
-          cp README.md _site/
+          cp index.html README.md _site/
           cp -r styles src vendor docs _site/
-          # 关掉 Jekyll，否则以下划线开头的目录会被吞掉
+          # 关掉 Jekyll，否则以下划线开头的路径会被吞掉
           touch _site/.nojekyll
-          echo "--- 站点内容 ---"
           du -sh _site
-          ls -la _site
 
-      - name: 配置 Pages
-        uses: actions/configure-pages@v5
-        with:
-          enablement: true
-
-      - name: 上传构建产物
-        uses: actions/upload-pages-artifact@v3
-        with:
-          path: _site
-
-      - name: 部署
-        id: deployment
-        uses: actions/deploy-pages@v4
+      - name: 推送到 gh-pages
+        env:
+          TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          cd _site
+          git init -q -b gh-pages
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -q -m "部署 ${GITHUB_SHA:0:7}"
+          git push -f "https://x-access-token:${TOKEN}@github.com/${GITHUB_REPOSITORY}.git" HEAD:gh-pages
