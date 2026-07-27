@@ -176,13 +176,25 @@ export function roofSurface(L, D, opts = {}) {
     segX = 40, segZ = 22,
     tile = 0.30,         // 瓦垄密度
     eaveDrop = 0.0,
+    rib = 0.055,         // 瓦垄起伏高度（0 关闭）
+    ribW = 0.42,         // 瓦垄间距
   } = opts;
 
   const HX = L / 2 + overhang, HZ = D / 2 + overhang;
   const maxD = hip ? Math.min(HX, HZ) : HZ;
 
+  // 瓦垄：把网格加密到「每垄两格」，顶点正好落在垄脊与垄沟上，
+  // 屋面于是成了真正的瓦楞，而不是一张贴了图的斜板。
+  let gx = segX, gz = segZ;
+  let rowX = 0, rowZ = 0;
+  if (rib > 0.0001) {
+    gx = Math.min(180, Math.max(segX, Math.round(2 * HX * 2 / ribW / 2) * 2));
+    gz = Math.min(180, Math.max(segZ, Math.round(2 * HZ * 2 / ribW / 2) * 2));
+    rowX = 2 * HX * 2 / gx;   // 每两格一垄
+    rowZ = 2 * HZ * 2 / gz;
+  }
+
   const pos = [], uv = [], idx = [];
-  const gx = segX, gz = segZ;
   const surf = (u, v) => {
     // u,v ∈ [0,1] 覆盖整个屋顶投影矩形
     let x = (u - 0.5) * 2 * HX;
@@ -204,6 +216,13 @@ export function roofSurface(L, D, opts = {}) {
     // 檐口略微上卷
     const eaveT = Math.pow(Math.max(0, (t - 0.86) / 0.14), 2);
     y += eaveT * upturn * 0.30;
+    // 瓦垄起伏：横跨坡面的方向上做半圆，顺坡而下
+    if (rib > 0.0001) {
+      const alongX = hip ? dx >= dz : true;   // 该坡的檐口是前后向？瓦垄就沿 x 排
+      const across = alongX ? x : z;
+      const w = alongX ? rowX : rowZ;
+      y += rib * (0.5 - 0.5 * Math.cos(Math.PI * 2 * across / w));
+    }
     return [x, y, z, dx, dz];
   };
 
@@ -233,7 +252,7 @@ export function roofSurface(L, D, opts = {}) {
 
 // 屋顶下表面（望板），避免从下方看穿
 export function roofUnder(L, D, opts = {}) {
-  const g = roofSurface(L, D, { ...opts, segX: 12, segZ: 8, tile: 0.24 });
+  const g = roofSurface(L, D, { ...opts, segX: 12, segZ: 8, tile: 0.24, rib: 0 });
   const p = g.attributes.position;
   for (let i = 0; i < p.count; i++) p.setY(i, p.getY(i) - 0.16);
   p.needsUpdate = true;

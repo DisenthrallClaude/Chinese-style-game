@@ -63,11 +63,20 @@ const godRayCompose = {
   uniforms: {
     tDiffuse: { value: null },
     tRays: { value: null },
+    tDepth: { value: null },
     uSunScreen: { value: new THREE.Vector2(0.5, 0.8) },
     uRayTexel: { value: new THREE.Vector2(0.01, 0.01) },
     uIntensity: { value: 0.85 },
     uSunColor: { value: new THREE.Color(1.0, 0.86, 0.66) },
     uVisible: { value: 1.0 },
+    // 墨线（深度二阶差分描边）
+    uTexel: { value: new THREE.Vector2(1 / 1280, 1 / 720) },
+    uInk: { value: 0.85 },
+    uInkColor: { value: new THREE.Color(0.17, 0.17, 0.23) },
+    uInkRange: { value: new THREE.Vector2(0.012, 0.10) },
+    uInkFade: { value: 0.0021 },
+    uNear: { value: 0.6 },
+    uFar: { value: 3000 },
   },
   vertexShader: /* glsl */`
     varying vec2 vUv;
@@ -75,25 +84,54 @@ const godRayCompose = {
   `,
   fragmentShader: /* glsl */`
     precision highp float;
-    uniform sampler2D tDiffuse, tRays;
+    uniform sampler2D tDiffuse, tRays, tDepth;
     uniform vec2  uSunScreen;
     uniform vec2  uRayTexel;
-    uniform float uIntensity, uVisible;
-    uniform vec3  uSunColor;
+    uniform vec2  uTexel;
+    uniform vec2  uInkRange;
+    uniform float uIntensity, uVisible, uInk, uInkFade, uNear, uFar;
+    uniform vec3  uSunColor, uInkColor;
     varying vec2 vUv;
+
+    // 线性视深度
+    float eyeZ(vec2 uv) {
+      float z = texture2D(tDepth, uv).x * 2.0 - 1.0;
+      return (2.0 * uNear * uFar) / (uFar + uNear - z * (uFar - uNear));
+    }
+
     void main() {
       vec4 base = texture2D(tDiffuse, vUv);
-      if (uVisible <= 0.001 || uIntensity <= 0.001) { gl_FragColor = base; return; }
-      // 低分辨率的光量图做一次轻微的十字模糊，抹掉块状
-      vec2 px = uRayTexel;
-      float r = texture2D(tRays, vUv).r * 0.4
-              + texture2D(tRays, vUv + vec2(px.x, 0.0)).r * 0.15
-              + texture2D(tRays, vUv - vec2(px.x, 0.0)).r * 0.15
-              + texture2D(tRays, vUv + vec2(0.0, px.y)).r * 0.15
-              + texture2D(tRays, vUv - vec2(0.0, px.y)).r * 0.15;
-      float dist = length((vUv - uSunScreen) * vec2(1.0, 0.72));
-      float falloff = exp(-dist * 1.55);
-      gl_FragColor = vec4(base.rgb + uSunColor * r * uIntensity * uVisible * (0.35 + falloff), base.a);
+      vec3 col = base.rgb;
+
+      if (uVisible > 0.001 && uIntensity > 0.001) {
+        // 低分辨率的光量图做一次轻微的十字模糊，抹掉块状
+        vec2 px = uRayTexel;
+        float r = texture2D(tRays, vUv).r * 0.4
+                + texture2D(tRays, vUv + vec2(px.x, 0.0)).r * 0.15
+                + texture2D(tRays, vUv - vec2(px.x, 0.0)).r * 0.15
+                + texture2D(tRays, vUv + vec2(0.0, px.y)).r * 0.15
+                + texture2D(tRays, vUv - vec2(0.0, px.y)).r * 0.15;
+        float dist = length((vUv - uSunScreen) * vec2(1.0, 0.72));
+        float falloff = exp(-dist * 1.55);
+        col += uSunColor * r * uIntensity * uVisible * (0.35 + falloff);
+      }
+
+      // 墨线：深度的二阶差分。斜面上恒为零，只有真正的轮廓与折角才出线。
+      if (uInk > 0.001) {
+        vec2 t = uTexel;
+        float dc = eyeZ(vUv);
+        float dl = eyeZ(vUv - vec2(t.x, 0.0));
+        float dr = eyeZ(vUv + vec2(t.x, 0.0));
+        float du = eyeZ(vUv - vec2(0.0, t.y));
+        float dd = eyeZ(vUv + vec2(0.0, t.y));
+        float ref = min(dc, min(min(dl, dr), min(du, dd)));
+        float lap = abs(dl + dr - 2.0 * dc) + abs(du + dd - 2.0 * dc);
+        float e = lap / max(ref, 1.0);
+        float ink = smoothstep(uInkRange.x, uInkRange.y, e) * exp(-ref * uInkFade);
+        col = mix(col, col * uInkColor, ink * uInk);
+      }
+
+      gl_FragColor = vec4(col, base.a);
     }
   `,
 };
@@ -132,22 +170,34 @@ export class GodRayPass extends Pass {
       uDensity: this.rayMat.uniforms.uDensity,
       uDecay: this.rayMat.uniforms.uDecay,
       uWeight: this.rayMat.uniforms.uWeight,
+      uInk: this.composeMat.uniforms.uInk,
+      uInkColor: this.composeMat.uniforms.uInkColor,
+      uInkRange: this.composeMat.uniforms.uInkRange,
+      uNear: this.composeMat.uniforms.uNear,
+      uFar: this.composeMat.uniforms.uFar,
     };
     this.rayQuad = new FullScreenQuad(this.rayMat);
     this.composeQuad = new FullScreenQuad(this.composeMat);
     this.needsSwap = true;
   }
 
-  setSize(w, h) {
+  // w/h 为 CSS 像素；pr 是像素比 —— 墨线要按真实像素取样才不会随分辨率变粗细
+  setSize(w, h, pr = 1) {
     const rw = Math.max(2, Math.floor(w * this.scale));
     const rh = Math.max(2, Math.floor(h * this.scale));
     this.rt.setSize(rw, rh);
     this.composeMat.uniforms.uRayTexel.value.set(1 / rw, 1 / rh);
+    const dw = Math.max(2, w * pr), dh = Math.max(2, h * pr);
+    this.composeMat.uniforms.uTexel.value.set(1.15 / dw, 1.15 / dh);
   }
 
   render(renderer, writeBuffer, readBuffer) {
     const iu = this.composeMat.uniforms.uIntensity.value;
     const vu = this.composeMat.uniforms.uVisible.value;
+    // 墨线也要读深度：没有深度纹理时整条支路都关掉
+    this.composeMat.uniforms.tDepth.value = readBuffer.depthTexture || null;
+    const inkSaved = this.composeMat.uniforms.uInk.value;
+    if (!readBuffer.depthTexture) this.composeMat.uniforms.uInk.value = 0;
     if (iu <= 0.001 || vu <= 0.001 || !readBuffer.depthTexture) {
       this.composeMat.uniforms.tDiffuse.value = readBuffer.texture;
       this.composeMat.uniforms.tRays.value = this.rt.texture;
@@ -171,6 +221,7 @@ export class GodRayPass extends Pass {
     }
     this.composeQuad.render(renderer);
     this.composeMat.uniforms.uVisible.value = vu;
+    this.composeMat.uniforms.uInk.value = inkSaved;
   }
 
   dispose() {

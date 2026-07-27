@@ -2,6 +2,7 @@
 import * as THREE from 'three';
 import { Noise, Rng, clamp, lerp, smoothstep } from '../core/noise.js';
 import { buildTexture, colorOf, normalOf, roughnessOf } from '../core/textures.js';
+import { toonify } from '../core/toon.js';
 import {
   VALLEY_C, WATER_Y, PLAZA, distToRiver, distToAnyPath, terraceHeight,
 } from './layout.js';
@@ -269,8 +270,9 @@ export class Terrain {
           w = vColor.rgb / max(vColor.r + vColor.g + vColor.b, 0.0001);
           vec2 wuv = vWorldP.xz;
           vec3 cg = texture2D(tGrass, wuv * 0.085).rgb;
-          vec3 cg2 = texture2D(tGrass, wuv * 0.021).rgb;
-          cg = mix(cg, cg2, 0.45);
+          // 第二层旋转 90° 再叠，草纹交织，不会拉出一道道长条
+          vec3 cg2 = texture2D(tGrass, vec2(wuv.y, -wuv.x) * 0.026).rgb;
+          cg = mix(cg, cg2, 0.30);
           vec3 cs = texture2D(tSoil, wuv * 0.11).rgb;
           vec3 cr = texture2D(tRock, wuv * 0.042).rgb;
           vec3 cr2 = texture2D(tRock, wuv * 0.0092).rgb;
@@ -278,12 +280,14 @@ export class Terrain {
           vec3 blended = cg * w.r + cs * w.g + cr * w.b;
           // 大尺度色彩变化，打散平铺感
           vec3 macro = texture2D(tMacro, wuv * 0.0043).rgb;
-          blended *= mix(vec3(0.68), vec3(1.34), macro.r);
+          blended *= mix(vec3(0.78), vec3(1.22), macro.r);
           blended *= mix(vec3(0.94, 1.0, 0.92), vec3(1.12, 1.02, 0.84), macro.g);
           diffuseColor.rgb *= blended;
         `);
       this._terrainShader = shader;
     };
+    // 地面卡通量给得比建筑轻得多，只把坡面的明暗稍稍收一收
+    toonify(mat, 0.15);
     return mat;
   }
 

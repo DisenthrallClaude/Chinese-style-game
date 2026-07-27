@@ -2,6 +2,7 @@
 import * as THREE from 'three';
 import { Rng, lerp, clamp } from '../core/noise.js';
 import { box, cyl, cone, sphere, torus, plane, T, beam } from './geo.js';
+import { toonify } from '../core/toon.js';
 
 /* ============================================================
    灯笼群（实例化，夜里点亮，随风轻摆）
@@ -135,6 +136,7 @@ export function makeClothMaterial(base) {
       `);
   };
   m.customProgramCacheKey = () => 'cloth';
+  toonify(m, 0.30);
   return m;
 }
 

@@ -113,7 +113,9 @@ export class Engine {
     this.bloom = new UnrealBloomPass(new THREE.Vector2(size.x, size.y), 0.62, 0.62, 0.72);
     this.composer.addPass(this.bloom);
 
-    this.godRay.setSize(w, h);
+    this.godRay.setSize(w, h, this.renderer.getPixelRatio());
+    this.godRay.uniforms.uNear.value = this.camera.near;
+    this.godRay.uniforms.uFar.value = this.camera.far;
 
     // 调色 + 暗角 + 颗粒 + 色散 + 色调映射输出
     this.grade = new GradePass();
@@ -131,7 +133,7 @@ export class Engine {
     this.composer.setPixelRatio(pr);
     this.composer.setSize(w, h);
     this.bloom.setSize(w * pr, h * pr);
-    this.godRay.setSize(w, h);
+    this.godRay.setSize(w, h, pr);
     this.grade.uniforms.uResolution.value.set(w * pr, h * pr);
   }
 

@@ -1,8 +1,9 @@
 // 异兽志 —— 程序化生成《山海经》凶兽，实例化绘制，肢体在顶点着色器里动
 import * as THREE from 'three';
 import { Rng, lerp, clamp } from '../core/noise.js';
-import { box, cyl, cone, sphere, T } from '../world/geo.js';
+import { box, cyl, cone, sphere, beam, T } from '../world/geo.js';
 import { colorOf } from '../core/textures.js';
+import { toonUniforms, TOON_PARS, TOON_BODY } from '../core/toon.js';
 
 /* ============================================================
    构件累加器：位置 / 顶点色 / 自发光强度 / 动画参数
@@ -29,10 +30,35 @@ class BeastBuilder {
     this.count += p.count;
     return this;
   }
+  // 焊接法线：把同一位置上的硬边法线求平均。
+  // 描边用的外扩壳靠它才不会在方盒的棱角处裂开。
+  _smoothNormals() {
+    const n = this.count;
+    const out = new Float32Array(n * 3);
+    const acc = new Map();
+    const key = (i) => {
+      const q = 512;
+      return `${Math.round(this.pos[i * 3] * q)},${Math.round(this.pos[i * 3 + 1] * q)},${Math.round(this.pos[i * 3 + 2] * q)}`;
+    };
+    for (let i = 0; i < n; i++) {
+      const k = key(i);
+      let a = acc.get(k);
+      if (!a) { a = [0, 0, 0]; acc.set(k, a); }
+      a[0] += this.nor[i * 3]; a[1] += this.nor[i * 3 + 1]; a[2] += this.nor[i * 3 + 2];
+    }
+    for (let i = 0; i < n; i++) {
+      const a = acc.get(key(i));
+      const l = Math.hypot(a[0], a[1], a[2]) || 1;
+      out[i * 3] = a[0] / l; out[i * 3 + 1] = a[1] / l; out[i * 3 + 2] = a[2] / l;
+    }
+    return out;
+  }
+
   build() {
     const g = new THREE.BufferGeometry();
     g.setAttribute('position', new THREE.Float32BufferAttribute(this.pos, 3));
     g.setAttribute('normal', new THREE.Float32BufferAttribute(this.nor, 3));
+    g.setAttribute('aSmooth', new THREE.BufferAttribute(this._smoothNormals(), 3));
     g.setAttribute('color', new THREE.Float32BufferAttribute(this.col, 3));
     g.setAttribute('aEmis', new THREE.Float32BufferAttribute(this.emi, 1));
     g.setAttribute('aAnim', new THREE.Float32BufferAttribute(this.anim, 4));
@@ -48,8 +74,8 @@ const hex2rgb = (h) => {
 };
 
 /* ---------------------------------------------------------- 部件 */
-function ellip(rx, ry, rz, seg = 13) {
-  const g = sphere(1, seg, Math.max(8, seg - 2), 0.5);
+function ellip(rx, ry, rz, seg = 16) {
+  const g = sphere(1, seg, Math.max(9, seg - 3), 0.5);
   const p = g.attributes.position;
   for (let i = 0; i < p.count; i++) p.setXYZ(i, p.getX(i) * rx, p.getY(i) * ry, p.getZ(i) * rz);
   g.computeVertexNormals();
@@ -58,12 +84,13 @@ function ellip(rx, ry, rz, seg = 13) {
 
 function addSpine(B, col, o = {}) {
   // 分段的躯干：从头到尾逐渐收细，整体做蛇形摆动
-  const { len = 3.0, r = 0.55, segs = 8, y = 1.0, taper = 0.5, wave = 0.06, rise = 0, seg = 12 } = o;
+  const { len = 3.0, r = 0.55, segs = 8, y = 1.0, taper = 0.5, wave = 0.06, rise = 0, seg = 15 } = o;
   for (let i = 0; i < segs; i++) {
     const t = i / (segs - 1);
     const rr = r * lerp(1.0, taper, Math.pow(t, 1.2)) * (1 - Math.pow(Math.abs(t - 0.42) * 1.5, 2) * 0.16);
     const z = lerp(len * 0.5, -len * 0.5, t);
-    const g = ellip(rr * 1.02, rr, rr * (len / segs) * 0.82, seg);
+    // 上窄下宽一点点：胸腹分明
+    const g = ellip(rr * 1.03, rr * 0.98, rr * (len / segs) * 0.86, seg);
     T(g, 0, y + rise * Math.sin(t * Math.PI), z);
     B.push(g, col, 0, [wave * t, t * 1.6, 0, 0]);
   }
@@ -71,19 +98,30 @@ function addSpine(B, col, o = {}) {
 
 function addLeg(B, col, x, z, o = {}) {
   const { h = 1.0, r = 0.14, phase = 0, y = 1.0, swing = 0.16, foot = true, claw = true } = o;
-  const g = cyl(r * 0.68, r, h, 8, 0.6);
-  T(g, x, y - h / 2, z);
-  B.push(g, col, 0, [swing, phase, 0, 0]);
+  const kneeY = y - h * 0.46;
+  // 大腿：上粗下细
+  const th = cyl(r * 0.80, r * 1.18, h * 0.56, 10, 0.6);
+  T(th, x, y - h * 0.24, z + r * 0.10);
+  B.push(th, col, 0, [swing * 0.7, phase, 0, 0]);
+  // 膝
+  B.push(T(ellip(r * 0.86, r * 0.86, r * 0.94, 10), x, kneeY, z + r * 0.05), col, 0, [swing, phase, 0, 0]);
+  // 小腿：略微前折
+  const sh = cyl(r * 0.58, r * 0.82, h * 0.54, 10, 0.6);
+  T(sh, x, y - h * 0.74, z - r * 0.10);
+  B.push(sh, col, 0, [swing * 1.15, phase, 0, 0]);
   if (foot) {
-    const f = ellip(r * 1.55, r * 0.72, r * 2.05, 9);
-    T(f, x, y - h + r * 0.5, z + r * 0.6);
+    const f = ellip(r * 1.55, r * 0.70, r * 2.00, 11);
+    T(f, x, y - h + r * 0.52, z + r * 0.58);
     B.push(f, col, 0, [swing * 1.2, phase, 0, 0]);
-    // 爪
-    if (claw) {
-      for (let i = -1; i <= 1; i++) {
-        const cw = cone(r * 0.24, r * 0.62, 5, 1.2);
-        T(cw, x + i * r * 0.62, y - h + r * 0.36, z + r * 1.7, Math.PI / 2.2, 0, 0);
-        B.push(cw, [0.94, 0.92, 0.86], 0.06, [swing * 1.25, phase, 0, 0]);
+    // 趾 + 爪
+    for (let i = -1; i <= 1; i++) {
+      const toe = ellip(r * 0.36, r * 0.30, r * 0.62, 8);
+      T(toe, x + i * r * 0.60, y - h + r * 0.42, z + r * 1.42);
+      B.push(toe, col, 0, [swing * 1.22, phase, 0, 0]);
+      if (claw) {
+        const cw = cone(r * 0.22, r * 0.60, 6, 1.2);
+        T(cw, x + i * r * 0.62, y - h + r * 0.34, z + r * 1.92, Math.PI / 2.2, 0, 0);
+        B.push(cw, [0.90, 0.88, 0.80], 0.06, [swing * 1.25, phase, 0, 0]);
       }
     }
   }
@@ -96,9 +134,15 @@ function addRidge(B, col, o = {}) {
     const t = i / (n - 1);
     const z = from + (to - from) * t;
     const hh = h * Math.sin(Math.PI * (0.18 + t * 0.82));
-    const g = cone(hh * 0.42, hh * 1.9, 4, 1.0);
+    const g = cone(hh * 0.42, hh * 1.9, 5, 1.0);
     T(g, 0, y + hh * 0.7, z, -0.35, 0, 0);
     B.push(g, col, emis, [0.06 + t * 0.16, phase + t * 1.7, 0, 0]);
+    // 鳍膜：贴在棘刺之间，剪影更连贯
+    if (i < n - 1) {
+      const web = box(0.045, hh * 0.95, Math.abs(to - from) / (n - 1) * 0.9, 0.9);
+      T(web, 0, y + hh * 0.42, z + (to - from) / (n - 1) * 0.5, -0.2, 0, 0);
+      B.push(web, col, emis * 0.7, [0.06 + t * 0.16, phase + t * 1.7, 0, 0]);
+    }
   }
 }
 
@@ -106,28 +150,54 @@ function addRidge(B, col, o = {}) {
 function addEars(B, col, o = {}) {
   const { y = 1.5, z = 1.2, r = 0.13, spread = 0.22, len = 0.42, tilt = 0.3 } = o;
   for (const s2 of [-1, 1]) {
-    const g = cone(r, len, 6, 1.0);
+    const g = cone(r, len, 7, 1.0);
     T(g, s2 * spread, y, z, -tilt, 0, s2 * 0.42);
     B.push(g, col, 0, [0.05, 0, 0, 0]);
+    // 耳窝：一小片内耳，近看有东西可读
+    const inner = cone(r * 0.56, len * 0.62, 6, 1.0);
+    T(inner, s2 * spread, y + len * 0.02, z + r * 0.34, -tilt, 0, s2 * 0.42);
+    B.push(inner, [col[0] * 0.62 + 0.24, col[1] * 0.52 + 0.16, col[2] * 0.52 + 0.16], 0.02, [0.05, 0, 0, 0]);
   }
 }
 
 function addWing(B, col, side, o = {}) {
   const { span = 2.2, chord = 1.1, y = 1.3, z = 0.1, flap = 0.55, tilt = 0.1, emis = 0 } = o;
-  // 翼骨
-  const bone = cyl(0.045, 0.10, span, 7, 0.8);
-  T(bone, side * span * 0.5, y + 0.07, z, 0, 0, Math.PI / 2);
-  B.push(bone, col, 0, [0, 0, flap, y]);
-  // 羽片：由内向外渐长、渐后掠，比一整块板子有形得多
-  const n = 6;
+  // 翼骨：肩 → 肘（拱起）→ 腕（外展下沉），拱起来才像翼，不是一块板
+  const arm = (t) => [
+    side * span * t,
+    y + Math.sin(t * Math.PI * 0.86) * span * 0.20 - t * t * span * 0.20,
+    z - t * chord * 0.34,
+  ];
+  const segs = 4;
+  for (let i = 0; i < segs; i++) {
+    const a = arm(i / segs), b = arm((i + 1) / segs);
+    const r = 0.10 - i * 0.017;
+    B.push(beam(a[0], a[1], a[2], b[0], b[1], b[2], r * 1.7, r * 1.7, 0.9), col, 0, [0, 0, flap * (0.3 + i * 0.22), y]);
+  }
+  // 肘与腕的关节
+  for (const t of [0.42, 0.86]) {
+    const p = arm(t);
+    B.push(T(ellip(0.115, 0.105, 0.125, 9), p[0], p[1], p[2]), col, 0, [0, 0, flap * (0.4 + t * 0.6), y]);
+  }
+  // 飞羽：贴着骨架排开，向后掠、向下垂，中段最长
+  const n = 9;
   for (let i = 0; i < n; i++) {
     const t = (i + 0.5) / n;
-    const len = chord * (1.18 - t * 0.52);
-    const g = box(span / n * 1.2, 0.045, len, 0.7);
-    T(g, side * (0.20 + t * span * 0.92), y + 0.03 + t * 0.12,
-      z - len * 0.32 - t * chord * 0.40,
-      tilt - t * 0.10, side * t * 0.28, side * (0.05 + t * 0.30));
+    const p = arm(t);
+    const len = chord * (0.72 + 0.86 * Math.sin(Math.PI * (0.22 + t * 0.74)));
+    const g = box(span / n * 1.32, 0.045, len, 0.7);
+    T(g, p[0], p[1] - 0.05 - t * 0.14, p[2] - len * 0.44,
+      tilt + 0.16 + t * 0.22, side * t * 0.46, side * (0.08 + t * 0.30));
     B.push(g, col, emis * (0.4 + t * 0.6), [0, 0, flap * (0.55 + t * 0.85), y]);
+  }
+  // 覆羽：压在飞羽根部的一排短羽，翼面于是有了厚度
+  for (let i = 0; i < 5; i++) {
+    const t = (i + 0.5) / 5 * 0.78;
+    const p = arm(t);
+    const g = box(span * 0.17, 0.05, chord * 0.40, 0.8);
+    T(g, p[0], p[1] + 0.07, p[2] - chord * 0.16,
+      tilt + 0.08, side * t * 0.30, side * (0.10 + t * 0.24));
+    B.push(g, col, emis * 0.35, [0, 0, flap * (0.4 + t * 0.5), y]);
   }
 }
 
@@ -141,7 +211,7 @@ function addTail(B, col, o = {}) {
     px += Math.sin(ang) * step;
     pz -= Math.cos(ang) * step;
     py += curve * step * (1 - t);
-    const g = ellip(rr, rr, step * 0.62, 7);
+    const g = ellip(rr, rr, step * 0.62, 9);
     T(g, px, py, pz);
     B.push(g, col, emis * t, [0.10 + t * 0.26, phase + t * 2.2, 0, 0]);
   }
@@ -152,27 +222,44 @@ function addHead(B, col, accent, o = {}) {
     y = 1.5, z = 1.7, r = 0.42, kind = 'beast', eye = 2, eyeColor = accent,
     horn = 0, jaw = true, phase = 0,
   } = o;
-  const g = ellip(r, r * 0.92, r * 1.32, 9);
+  const anim = [0.05, phase, 0, 0];
+  const g = ellip(r, r * 0.92, r * 1.32, 12);
   T(g, 0, y, z);
-  B.push(g, col, 0, [0.05, phase, 0, 0]);
+  B.push(g, col, 0, anim);
+  // 吻部：往前收一截，头就不再是个鸡蛋
+  const snout = ellip(r * 0.58, r * 0.50, r * 0.62, 10);
+  T(snout, 0, y - r * 0.16, z + r * 1.10);
+  B.push(snout, col, 0, anim);
+  // 鼻头
+  B.push(T(ellip(r * 0.20, r * 0.16, r * 0.14, 8), 0, y - r * 0.06, z + r * 1.60),
+    [col[0] * 0.42, col[1] * 0.40, col[2] * 0.42], 0.0, anim);
   if (jaw) {
-    const j = ellip(r * 0.68, r * 0.42, r * 0.92, 7);
-    T(j, 0, y - r * 0.52, z + r * 0.42);
-    B.push(j, col, 0, [0.05, phase, 0, 0]);
+    const j = ellip(r * 0.62, r * 0.40, r * 0.94, 10);
+    T(j, 0, y - r * 0.54, z + r * 0.48);
+    B.push(j, col, 0, anim);
   }
-  // 眼
+  // 眉骨：压在眼上方，眼神立刻凶起来
   const eyes = eye === 1 ? [[0, 0]] : [[-r * 0.5, 0], [r * 0.5, 0]];
   for (const [ex] of eyes) {
-    const e = ellip(r * (eye === 1 ? 0.34 : 0.19), r * (eye === 1 ? 0.30 : 0.17), r * 0.14, 7);
-    T(e, ex, y + r * 0.22, z + r * 0.98);
-    B.push(e, eyeColor, 1.0, [0.05, phase, 0, 0]);
+    const brow = box(r * (eye === 1 ? 0.86 : 0.50), r * 0.16, r * 0.34, 1.0);
+    T(brow, ex, y + r * 0.50, z + r * 0.86, -0.28, 0, ex > 0 ? -0.22 : (ex < 0 ? 0.22 : 0));
+    B.push(brow, [col[0] * 0.66, col[1] * 0.64, col[2] * 0.66], 0.0, anim);
+    // 眼白托底 + 发光瞳
+    const socket = ellip(r * (eye === 1 ? 0.42 : 0.25), r * (eye === 1 ? 0.38 : 0.23), r * 0.12, 9);
+    T(socket, ex, y + r * 0.22, z + r * 0.94);
+    B.push(socket, [0.09, 0.08, 0.09], 0.0, anim);
+    const e = ellip(r * (eye === 1 ? 0.32 : 0.18), r * (eye === 1 ? 0.28 : 0.16), r * 0.14, 9);
+    T(e, ex, y + r * 0.22, z + r * 0.99);
+    B.push(e, eyeColor, 1.0, anim);
   }
   // 角
   for (let i = 0; i < horn; i++) {
     const s = i % 2 === 0 ? -1 : 1;
-    const hg = cone(r * 0.20, r * (1.1 + (i >> 1) * 0.4), 6, 0.8);
+    const hg = cone(r * 0.20, r * (1.1 + (i >> 1) * 0.4), 7, 0.8);
     T(hg, s * r * 0.52, y + r * 0.86 + (i >> 1) * 0.12, z - r * 0.24, -0.4, 0, s * 0.42);
-    B.push(hg, accent, 0.12, [0.05, phase, 0, 0]);
+    B.push(hg, accent, 0.12, anim);
+    // 角根：一圈粗环，接口不再是硬插进去的
+    B.push(T(ellip(r * 0.24, r * 0.12, r * 0.24, 9), s * r * 0.52, y + r * 0.78, z - r * 0.20), accent, 0.06, anim);
   }
 }
 
@@ -354,8 +441,8 @@ const SHAPES = {
       T(tth, (i - 2.5) * 0.14, 1.66, 2.44, Math.PI, 0, 0);
       B.push(tth, [0.95, 0.92, 0.84], 0.1, [0.05, 0, 0, 0]);
     }
-    addWing(B, a, -1, { span: 3.6, chord: 1.7, y: 2.15, z: 0.3, flap: 0.42, emis: 0.12 });
-    addWing(B, a, 1, { span: 3.6, chord: 1.7, y: 2.15, z: 0.3, flap: 0.42, emis: 0.12 });
+    addWing(B, a, -1, { span: 3.0, chord: 1.30, y: 2.00, z: 0.35, flap: 0.42, emis: 0.12 });
+    addWing(B, a, 1, { span: 3.0, chord: 1.30, y: 2.00, z: 0.35, flap: 0.42, emis: 0.12 });
     addTail(B, c, { len: 2.4, r: 0.19, y: 1.6, z: -1.8, curve: 0.3, segs: 5 });
   },
   // 夔：苍身一足之牛
@@ -432,22 +519,47 @@ export const beastUniforms = {
   uRim: { value: 0.17 },
   uRimColor: { value: new THREE.Color(0xfff0d0) },
   tSkin: { value: null },
+  uInk: { value: 0.0042 },                          // 描边粗细（按视距缩放）
+  uInkColor: { value: new THREE.Color(0x1d1512) },
 };
+
+// 顶点动画：主体与描边壳必须走同一套，否则轮廓会「掉队」
+const BEAST_ANIM = /* glsl */`
+  float ph = aPhase + aAnim.y;
+  float spd = mix(2.2, 9.5, clamp(aGait, 0.0, 1.0)) * (1.0 - aState.y * 0.85);
+  float g = sin(uTime * spd + ph);
+  transformed.y += g * aAnim.x;
+  transformed.z += cos(uTime * spd + ph) * aAnim.x * 0.55;
+  if (aAnim.z > 0.001) {
+    float ang = sin(uTime * (spd * 1.35) + aPhase) * aAnim.z * (position.x < 0.0 ? -1.0 : 1.0);
+    float cc = cos(ang), ss = sin(ang);
+    float px = transformed.x, py = transformed.y - aAnim.w;
+    transformed.x = px * cc - py * ss;
+    transformed.y = px * ss + py * cc + aAnim.w;
+    float nx = animNormal.x, ny = animNormal.y;
+    animNormal.x = nx * cc - ny * ss;
+    animNormal.y = nx * ss + ny * cc;
+  }
+  transformed *= max(0.02, 1.0 - aState.z * 0.55);
+`;
 
 export function makeBeastMaterial() {
   const m = new THREE.MeshStandardMaterial({
     vertexColors: true,
     roughness: 0.54,
-    metalness: 0.12,
+    metalness: 0.10,
     emissive: new THREE.Color(0xffffff),
     emissiveIntensity: 1.0,
   });
   if (!beastUniforms.tSkin.value) beastUniforms.tSkin.value = colorOf('noiseRGBA', 1);
+  m.defines = { TOON_SHADE: '' };
   m.onBeforeCompile = (shader) => {
     shader.uniforms.uTime = beastUniforms.uTime;
     shader.uniforms.uRim = beastUniforms.uRim;
     shader.uniforms.uRimColor = beastUniforms.uRimColor;
     shader.uniforms.tSkin = beastUniforms.tSkin;
+    shader.uniforms.uToon = { value: 0.52 };
+    shader.uniforms.uToonSteps = toonUniforms.uToonSteps;
     shader.vertexShader = shader.vertexShader
       .replace('#include <common>', `#include <common>
         attribute vec4 aAnim;
@@ -463,19 +575,8 @@ export function makeBeastMaterial() {
         vEmis = aEmis;
         vState = aState;
         vLocal = position;
-        float ph = aPhase + aAnim.y;
-        float spd = mix(2.2, 9.5, clamp(aGait, 0.0, 1.0)) * (1.0 - aState.y * 0.85);
-        float g = sin(uTime * spd + ph);
-        transformed.y += g * aAnim.x;
-        transformed.z += cos(uTime * spd + ph) * aAnim.x * 0.55;
-        if (aAnim.z > 0.001) {
-          float ang = sin(uTime * (spd * 1.35) + aPhase) * aAnim.z * (position.x < 0.0 ? -1.0 : 1.0);
-          float cc = cos(ang), ss = sin(ang);
-          float px = transformed.x, py = transformed.y - aAnim.w;
-          transformed.x = px * cc - py * ss;
-          transformed.y = px * ss + py * cc + aAnim.w;
-        }
-        transformed *= max(0.02, 1.0 - aState.z * 0.55);
+        vec3 animNormal = objectNormal;   // 主体不回写法线，仅供动画式共用
+        ${BEAST_ANIM}
       `);
     shader.fragmentShader = shader.fragmentShader
       .replace('#include <common>', `#include <common>
@@ -484,14 +585,15 @@ export function makeBeastMaterial() {
         varying vec3 vLocal;
         uniform float uRim;
         uniform vec3 uRimColor;
-        uniform sampler2D tSkin;`)
+        uniform sampler2D tSkin;
+        ${TOON_PARS}`)
       .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
         // 皮纹：物体空间取噪声，随身体一起动
         float skin = texture2D(tSkin, vLocal.xz * 0.62 + vLocal.y * 0.17).g;
         float skin2 = texture2D(tSkin, vLocal.xy * 1.9 - vLocal.z * 0.4).r;
-        diffuseColor.rgb *= mix(0.80, 1.18, skin * 0.65 + skin2 * 0.35);
+        diffuseColor.rgb *= mix(0.86, 1.14, skin * 0.65 + skin2 * 0.35);
         // 底面压暗，形体立刻立起来
-        diffuseColor.rgb *= mix(0.55, 1.0, clamp(vLocal.y * 0.58, 0.0, 1.0));
+        diffuseColor.rgb *= mix(0.62, 1.0, clamp(vLocal.y * 0.58, 0.0, 1.0));
         totalEmissiveRadiance = diffuseColor.rgb * vEmis * 0.85;
         // 冰封：泛青白
         diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.62, 0.86, 1.0), vState.y * 0.72);
@@ -503,10 +605,65 @@ export function makeBeastMaterial() {
         float rimF = 1.0 - clamp(dot(normalize(normal), normalize(vViewPosition)), 0.0, 1.0);
         rimF = pow(rimF, 3.6);
         totalEmissiveRadiance += mix(uRimColor, diffuseColor.rgb * 1.6, 0.55) * rimF * uRim;
-      `);
+      `)
+      .replace('#include <lights_fragment_end>', `#include <lights_fragment_end>
+        ${TOON_BODY}`);
   };
   m.customProgramCacheKey = () => 'beast';
   return m;
+}
+
+/* ------------------------------------------------------------------
+   描边壳：同一批实例、同一套顶点动画，法线外扩后只画背面。
+   顶点法线在 build() 里已按位置焊接过，方盒棱角处不会裂。
+   ------------------------------------------------------------------ */
+export function makeBeastOutlineMaterial() {
+  return new THREE.ShaderMaterial({
+    uniforms: {
+      uTime: beastUniforms.uTime,
+      uInk: beastUniforms.uInk,
+      uInkColor: beastUniforms.uInkColor,
+    },
+    vertexShader: /* glsl */`
+      attribute vec3 aSmooth;
+      attribute vec4 aAnim;
+      attribute float aPhase;
+      attribute float aGait;
+      attribute vec3 aState;
+      uniform float uTime;
+      uniform float uInk;
+      varying float vCut;
+      void main() {
+        vec3 transformed = position;
+        vec3 animNormal = normalize(aSmooth);
+        ${BEAST_ANIM}
+        vCut = aState.z;
+        vec4 wp = vec4(transformed, 1.0);
+        vec3 wn = animNormal;
+        #ifdef USE_INSTANCING
+          wp = instanceMatrix * wp;
+          wn = normalize(mat3(instanceMatrix) * animNormal);
+        #endif
+        vec4 mv = modelViewMatrix * wp;
+        vec3 vn = normalize(normalMatrix * wn);
+        // 线宽随视距放大 —— 屏幕上粗细基本恒定
+        float w = uInk * clamp(-mv.z, 12.0, 220.0);
+        mv.xyz += vn * w;
+        gl_Position = projectionMatrix * mv;
+      }
+    `,
+    fragmentShader: /* glsl */`
+      precision highp float;
+      uniform vec3 uInkColor;
+      varying float vCut;
+      void main() {
+        if (vCut > 0.45) discard;       // 消散中的兽不再描边
+        gl_FragColor = vec4(uInkColor, 1.0);
+      }
+    `,
+    side: THREE.BackSide,
+    fog: false,
+  });
 }
 
 /* ============================================================

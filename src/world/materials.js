@@ -1,11 +1,15 @@
 // 材料库 —— 全村共用一组材质，合并后只剩十来个 draw call
 import * as THREE from 'three';
 import { colorOf, normalOf, roughnessOf, alphaOf } from '../core/textures.js';
+import { toonify } from '../core/toon.js';
+
+// 世界材质的卡通量：比凶兽收敛，只把明暗交界收利落
+const TOON_WORLD = 0.34;
 
 function std(tex, opts = {}) {
   const {
     normal = 1.6, rough = [0.55, 0.98], roughInvert = false,
-    metalness = 0, color = 0xffffff, normalScale = 1.0, ...rest
+    metalness = 0, color = 0xffffff, normalScale = 1.0, toon = TOON_WORLD, ...rest
   } = opts;
   const m = new THREE.MeshStandardMaterial({
     map: colorOf(tex, 1),
@@ -18,6 +22,7 @@ function std(tex, opts = {}) {
   });
   m.normalScale.set(normalScale, normalScale);
   m.userData = {};
+  toonify(m, toon);
   return m;
 }
 
@@ -77,10 +82,13 @@ export function createMaterials() {
   });
   M.lattice.userData = {};
 
+  toonify(M.lattice, TOON_WORLD);
+
   const latticeIce = alphaOf('latticeIce', 1);
   M.latticeIce = M.lattice.clone();
   M.latticeIce.alphaMap = latticeIce;
   M.latticeIce.userData = {};
+  toonify(M.latticeIce, TOON_WORLD);
 
   // 窗后的暗房间 —— 夜里透出灯光
   M.windowGlow = new THREE.MeshStandardMaterial({
@@ -109,6 +117,9 @@ export function createMaterials() {
     side: THREE.DoubleSide,
     roughness: 1.0,
   });
+  // 叶片本就偏平，卡通量给足一点，团块感更像画出来的
+  for (const k of ['leaf', 'leafB', 'leafC', 'leafPine', 'grass']) toonify(M[k], 0.46);
+  for (const k of ['paper', 'paperWhite', 'windowGlow']) toonify(M[k], 0.22);
 
   for (const k of Object.keys(M)) if (!M[k].userData) M[k].userData = {};
   return M;

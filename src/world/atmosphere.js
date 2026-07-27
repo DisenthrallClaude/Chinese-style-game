@@ -1,112 +1,9 @@
-// 气象 —— 谷雾、浮尘、流萤、飞鸟、落英与炊烟
+// 气象 —— 浮尘、流萤、飞鸟、落英与炊烟（谷雾已撤，画面要通透）
 import * as THREE from 'three';
 import { Noise, Rng, clamp, lerp, smoothstep } from '../core/noise.js';
-import { colorOf, buildTexture } from '../core/textures.js';
+import { colorOf } from '../core/textures.js';
 import { VALLEY_C, distToRiver } from './layout.js';
 
-/* ============================================================
-   谷雾 —— 若干水平雾片，随风缓移
-   ============================================================ */
-const mistVert = /* glsl */`
-  varying vec2 vUv;
-  varying vec3 vWorld;
-  varying float vFade;
-  uniform float uTime;
-  attribute float aPhase;
-  attribute float aSpeed;
-  void main() {
-    vUv = uv;
-    vec3 p = position;
-    vec4 wp = instanceMatrix * vec4(p, 1.0);
-    wp = modelMatrix * wp;
-    wp.x += sin(uTime * aSpeed + aPhase) * 7.0;
-    wp.z += cos(uTime * aSpeed * 0.73 + aPhase * 1.4) * 5.0;
-    wp.y += sin(uTime * aSpeed * 0.51 + aPhase) * 1.2;
-    vWorld = wp.xyz;
-    vec4 mv = viewMatrix * wp;
-    vFade = clamp(1.0 - (-mv.z) / 620.0, 0.0, 1.0);
-    gl_Position = projectionMatrix * mv;
-  }
-`;
-const mistFrag = /* glsl */`
-  precision highp float;
-  varying vec2 vUv;
-  varying vec3 vWorld;
-  varying float vFade;
-  uniform sampler2D tMist;
-  uniform vec3 uColor;
-  uniform float uOpacity, uTime;
-  uniform vec3 uCameraP;
-  void main() {
-    float a = texture2D(tMist, vUv).a;
-    vec3 vd = normalize(vWorld - uCameraP);
-    // 水平雾片：平视时厚、俯视时薄，才像一层浮在谷中的雾带
-    float graze = pow(1.0 - min(1.0, abs(vd.y)), 3.0);
-    float d = distance(uCameraP, vWorld);
-    float near = smoothstep(90.0, 240.0, d);
-    float alpha = a * a * uOpacity * vFade * near * mix(0.02, 1.0, graze);
-    if (alpha < 0.004) discard;
-    gl_FragColor = vec4(uColor, alpha);
-  }
-`;
-
-class MistField {
-  constructor(scene, terrain, count = 110) {
-    const geo = new THREE.PlaneGeometry(1, 1);
-    geo.rotateX(-Math.PI / 2);
-    const rng = new Rng(31337);
-    const phase = new Float32Array(count), speed = new Float32Array(count);
-
-    this.material = new THREE.ShaderMaterial({
-      uniforms: {
-        tMist: { value: buildTexture('mistPuff') },
-        uColor: { value: new THREE.Color(0xd6e2ea) },
-        uOpacity: { value: 0.55 },
-        uTime: { value: 0 },
-        uCameraP: { value: new THREE.Vector3() },
-      },
-      vertexShader: mistVert,
-      fragmentShader: mistFrag,
-      transparent: true,
-      depthWrite: false,
-      side: THREE.DoubleSide,
-      blending: THREE.NormalBlending,
-    });
-
-    this.mesh = new THREE.InstancedMesh(geo, this.material, count);
-    this.mesh.frustumCulled = false;
-    const m = new THREE.Matrix4(), q = new THREE.Quaternion(), p = new THREE.Vector3(), s = new THREE.Vector3();
-    for (let i = 0; i < count; i++) {
-      const near = i < count * 0.30;
-      const a = rng.range(0, Math.PI * 2);
-      const r = near ? rng.range(110, 250) : rng.range(250, 620);
-      const x = VALLEY_C.x + Math.cos(a) * r;
-      const z = VALLEY_C.z + Math.sin(a) * r;
-      const gy = terrain.baseHeight(x, z);
-      const y = gy + (near ? rng.range(3, 22) : rng.range(10, 76));
-      const sc = near ? rng.range(46, 110) : rng.range(120, 340);
-      p.set(x, y, z);
-      q.setFromAxisAngle(new THREE.Vector3(0, 1, 0), rng.range(0, Math.PI * 2));
-      s.set(sc, 1, sc * rng.range(0.6, 1.0));
-      m.compose(p, q, s);
-      this.mesh.setMatrixAt(i, m);
-      phase[i] = rng.range(0, 30);
-      speed[i] = rng.range(0.012, 0.05);
-    }
-    this.mesh.instanceMatrix.needsUpdate = true;
-    this.mesh.geometry.setAttribute('aPhase', new THREE.InstancedBufferAttribute(phase, 1));
-    this.mesh.geometry.setAttribute('aSpeed', new THREE.InstancedBufferAttribute(speed, 1));
-    this.mesh.renderOrder = 8;
-    scene.add(this.mesh);
-  }
-  update(t, camera, color, opacity) {
-    const u = this.material.uniforms;
-    u.uTime.value = t;
-    u.uCameraP.value.copy(camera.position);
-    if (color) u.uColor.value.copy(color);
-    if (opacity !== undefined) u.uOpacity.value = opacity;
-  }
-}
 
 /* ============================================================
    通用粒子场（顶点着色器驱动，CPU 零开销）
@@ -274,9 +171,8 @@ class Birds {
 
 /* ============================================================ */
 export class Atmosphere {
-  constructor(scene, terrain) {
+  constructor(scene) {
     this.scene = scene;
-    this.mist = new MistField(scene, terrain, 110);
     this.dust = new ParticleField(scene, {
       count: 520, mode: 0, area: 108, yBase: 0.5, yRange: 20,
       sizeRange: [0.5, 1.5], speedRange: [0.18, 0.62],
@@ -295,7 +191,6 @@ export class Atmosphere {
     });
     this.birds = new Birds(scene, 20);
     this.smokes = [];
-    this._c = new THREE.Color();
   }
 
   addSmoke(x, y, z) {
@@ -309,11 +204,8 @@ export class Atmosphere {
   }
 
   update(dt, t, dayNight, camera) {
-    const s = dayNight.state;
     const nightT = clamp(dayNight.lanternLevel, 0, 1);
-    this._c.copy(s.fog).lerp(new THREE.Color(0xffffff), 0.10);
-    this.mist.update(t, camera, this._c, lerp(0.40, 0.62, nightT));
-    this.dust.update(t, lerp(0.24, 0.05, nightT));
+    this.dust.update(t, lerp(0.10, 0.03, nightT));
     this.fireflies.update(t, nightT * 0.95);
     this.petals.update(t, lerp(0.30, 0.10, nightT));
     this.birds.update(t);

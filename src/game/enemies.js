@@ -2,13 +2,16 @@
 import * as THREE from 'three';
 import { Rng, clamp, lerp, smoothstep } from '../core/noise.js';
 import { ENEMIES, RULES, elementMult } from './config.js';
-import { buildBeastGeometry, makeBeastMaterial, beastUniforms, HealthBars, GroundBlobs } from './beasts.js';
+import {
+  buildBeastGeometry, makeBeastMaterial, makeBeastOutlineMaterial, beastUniforms,
+  HealthBars, GroundBlobs,
+} from './beasts.js';
 import { PATHS, HEART, GATES } from '../world/layout.js';
 
 const MAX_PER_TYPE = 46;
 
 class TypePool {
-  constructor(scene, def, material) {
+  constructor(scene, def, material, outlineMaterial) {
     this.def = def;
     const geo = buildBeastGeometry(def);
     this.geo = geo;
@@ -29,6 +32,17 @@ class TypePool {
     this.mesh.frustumCulled = false;
     this.mesh.count = 0;
     scene.add(this.mesh);
+
+    // 描边壳：与本体共用同一份实例矩阵，永远同步
+    this.outline = new THREE.InstancedMesh(geo, outlineMaterial, this.max);
+    this.outline.instanceMatrix = this.mesh.instanceMatrix;
+    this.outline.castShadow = false;
+    this.outline.receiveShadow = false;
+    this.outline.frustumCulled = false;
+    this.outline.renderOrder = -1;
+    this.outline.count = 0;
+    scene.add(this.outline);
+
     this.list = [];
   }
 }
@@ -87,9 +101,10 @@ export class EnemyManager {
     this.terrain = terrain;
     this.game = game;
     this.material = makeBeastMaterial();
+    this.outlineMaterial = makeBeastOutlineMaterial();
     this.pools = {};
     for (const key of Object.keys(ENEMIES)) {
-      this.pools[key] = new TypePool(scene, ENEMIES[key], this.material);
+      this.pools[key] = new TypePool(scene, ENEMIES[key], this.material, this.outlineMaterial);
     }
     this.bars = new HealthBars(scene, 200);
     this.blobs = new GroundBlobs(scene, 220);
@@ -282,6 +297,7 @@ export class EnemyManager {
       const pool = this.pools[key];
       const L = pool.list;
       pool.mesh.count = L.length;
+      pool.outline.count = L.length;
       for (let i = 0; i < L.length; i++) {
         const e = L[i];
         const spawnScale = smoothstep(0, 0.45, e.spawnT);
@@ -328,6 +344,7 @@ export class EnemyManager {
     for (const k of Object.keys(this.pools)) {
       this.pools[k].list.length = 0;
       this.pools[k].mesh.count = 0;
+      this.pools[k].outline.count = 0;
     }
     this.bars.begin(); this.bars.end();
     this.blobs.begin(); this.blobs.end();

@@ -78,7 +78,7 @@ async function main() {
   const veg = await boot.step(0.82, '正在栽松植竹…', () => new Vegetation(engine.scene, terrain));
 
   // ---- 7. 氛围 --------------------------------------------------------
-  const atmo = await boot.step(0.90, '正在张灯结彩…', () => new Atmosphere(engine.scene, terrain));
+  const atmo = await boot.step(0.90, '正在张灯结彩…', () => new Atmosphere(engine.scene));
 
   // ---- 8. 玩法 --------------------------------------------------------
   const game = await boot.step(0.95, '正在推演天时…', () => new Game({

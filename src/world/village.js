@@ -16,6 +16,7 @@ import {
 } from './props.js';
 import {
   HEART, GATES, BRIDGE, RIVER, WATER_Y, addFootprint, PATHS, TRUNK_LINE, distToRiver,
+  inFootprint,
 } from './layout.js';
 
 // 建筑排布表（先登记台基，再造地形，最后落地）
@@ -181,6 +182,10 @@ export class Village {
 
     // ============ 沿途灯柱 ============
     this._pathLamps(B, rng);
+
+    // ============ 兽道石牙与梯田石坎 ============
+    this._pathEdging(B);
+    this._terraceWalls(B);
 
     // 合并
     const merged = B.merge(this.M);
@@ -436,6 +441,68 @@ export class Village {
         B.add('stoneCut', T(box(0.75, 0.14, 0.75, 0.8), px, y + 2.95, pz));
         B.add('paper', T(box(0.55, 0.7, 0.55, 1.0), px, y + 3.35, pz));
         B.add('tileDark', T(cone(0.62, 0.42, 4, 0.9), px, y + 3.9, pz, 0, 0.78, 0));
+      }
+    }
+  }
+
+  // ---- 兽道石牙：路沿一线错落的碎石，路的边界立刻读得出来
+  _pathEdging(B) {
+    const T2 = this.terrain;
+    const rng = new Rng(7712);
+    const trunkLen = TRUNK_LINE.length;
+    const runs = [
+      [PATHS.left, 2, PATHS.left.length - trunkLen],
+      [PATHS.right, 2, PATHS.right.length - trunkLen],
+      [TRUNK_LINE, 1, trunkLen - 1],
+    ];
+    for (const [line, from, to] of runs) {
+      for (let d = from; d < to; d += 1.95) {
+        const [x, z] = line.at(d);
+        const [tx, tz] = line.tangentAt(d);
+        const nx = -tz, nz = tx;
+        const ang = Math.atan2(tx, tz);
+        for (const sd of [-1, 1]) {
+          if (rng.chance(0.14)) continue;             // 缺几颗才像用了很多年
+          const off = 3.6 + rng.range(-0.25, 0.25);
+          const px = x + nx * sd * off, pz = z + nz * sd * off;
+          if (distToRiver(px, pz) < 5.0) continue;
+          if (inFootprint(px, pz, 0.6)) continue;
+          const y = T2.heightAt(px, pz);
+          if (y < WATER_Y + 0.6) continue;
+          const w = rng.range(0.52, 0.94), h = rng.range(0.24, 0.44);
+          B.add(rng.chance(0.45) ? 'stone' : 'stoneCut', T(
+            box(w, h + 0.3, 0.46, 0.9),
+            px, y + h * 0.36, pz,
+            rng.range(-0.07, 0.07), ang + rng.range(-0.2, 0.2), rng.range(-0.06, 0.06)));
+        }
+      }
+    }
+  }
+
+  // ---- 梯田石坎：每一级台地的坎口砌石，山坡不再是一顺的斜面
+  _terraceWalls(B) {
+    const T2 = this.terrain;
+    const rng = new Rng(4531);
+    // terraceHeight 的五级踏步反解出的坎口位置
+    const risers = [-36.3, -50.2, -61.9, -73.8, -88.7];
+    for (const zr of risers) {
+      let gap = 0;
+      for (let x = -74; x <= 74; x += 2.9) {
+        if (gap > 0) { gap--; continue; }
+        if (rng.chance(0.13)) { gap = 1 + (rng.next() * 2 | 0); continue; }   // 坎子断开几处，别拉成一道城墙
+        const zz = zr + Math.sin(x * 0.07) * 1.6;      // 坎线随坡就势地弯
+        const yHi = T2.heightAt(x, zz - 1.7);
+        const yLo = T2.heightAt(x, zz + 1.7);
+        const drop = yHi - yLo;
+        if (drop < 1.3 || drop > 7) continue;
+        if (distToRiver(x, zz) < 8) continue;
+        if (inFootprint(x, zz, 1.2)) continue;
+        if (Math.min(PATHS.left.distanceTo(x, zz), PATHS.right.distanceTo(x, zz)) < 4.5) continue;
+        const top = yHi + 0.16, bot = yLo - 0.7;
+        const hh = top - bot;
+        B.add('stoneCut', T(box(2.9, hh, 0.95, 0.62), x, (top + bot) / 2, zz, 0, rng.range(-0.05, 0.05), 0));
+        // 压顶石
+        B.add('stone', T(box(2.95, 0.18, 1.18, 0.75), x, top - 0.09, zz, 0, 0, 0));
       }
     }
   }

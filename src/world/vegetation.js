@@ -4,6 +4,7 @@ import { Noise, Rng, clamp, lerp, smoothstep } from '../core/noise.js';
 import { box, cyl, cone, sphere, plane, T, beam } from './geo.js';
 import { getMaterials } from './materials.js';
 import { colorOf } from '../core/textures.js';
+import { toonify } from '../core/toon.js';
 import { distToAnyPath, distToRiver, inFootprint, VALLEY_C, HEART } from './layout.js';
 
 const windUniforms = { uTime: { value: 0 }, uWind: { value: 1.0 } };
@@ -32,6 +33,8 @@ function makeFoliageMaterial(base, stiffness = 1.0) {
       `);
   };
   m.customProgramCacheKey = () => 'foliage' + stiffness;
+  // clone() 不带走卡通着色，得再挂一次
+  toonify(m, 0.46);
   return m;
 }
 

@@ -75,6 +75,20 @@ function addDoor(B, x, y, z, ry, w = 2.0, h = 2.5) {
   }
   // 门槛
   B.add('stoneCut', T(box(w + 0.5, 0.16, 0.34, 0.8), x, y + 0.08, z, 0, ry, 0));
+  // 抱鼓石：门枕一对，正门立刻有了分量
+  for (const s of [-1, 1]) {
+    const ox = Math.cos(ry) * (w / 2 + 0.34) * s, oz = -Math.sin(ry) * (w / 2 + 0.34) * s;
+    B.add('stone', T(box(0.52, 0.26, 0.86, 0.8), x + ox, y + 0.13, z + oz, 0, ry, 0));
+    // 鼓面朝门外：先把圆柱扳倒指向 +Z，再随立面转过去
+    const drum = T(cyl(0.32, 0.32, 0.20, 14, 1.0), 0, 0, 0, Math.PI / 2, 0, 0);
+    B.add('stoneCut', T(drum, x + ox, y + 0.56, z + oz, 0, ry, 0));
+    B.add('stoneCut', T(box(0.17, 0.46, 0.34, 0.9), x + ox, y + 0.34, z + oz, 0, ry, 0));
+  }
+  // 门簪与匾底
+  for (const s of [-0.34, 0.34]) {
+    const ox = Math.cos(ry) * w * s, oz = -Math.sin(ry) * w * s;
+    B.add('woodRed', T(cyl(0.075, 0.075, 0.18, 8, 1.4), x + ox, y + h + 0.18, z + oz, Math.PI / 2, ry, 0));
+  }
 }
 
 /* ---------------------------------------------------------- 屋顶 */
@@ -132,6 +146,12 @@ export function addRoof(B, cx, cy, cz, L, D, opts = {}) {
       }
       // 角上的套兽
       B.add(ridgeMat, T(cone(0.16, 0.42, 6, 1.4), bx2, y1 + 0.30, bz2, 0.3 * sz, 0, -0.3 * sx));
+      // 风铎：翼角挑出一截铁挑，底下悬一枚铜铃
+      const hx = bx2 + (bx2 - ax) * 0.05, hz = bz2 + (bz2 - az) * 0.05;
+      B.add('iron', T(cyl(0.030, 0.030, 0.34, 5, 1.4), hx, y1 + 0.02, hz));
+      B.add('bronze', T(cyl(0.115, 0.075, 0.20, 8, 1.6), hx, y1 - 0.24, hz));
+      B.add('bronze', T(sphere(0.048, 6, 5, 2), hx, y1 - 0.38, hz));
+      B.add('bronze', T(box(0.11, 0.13, 0.02, 1.6), hx, y1 - 0.46, hz, 0, sx * 0.4, 0));
     }
   }
 
