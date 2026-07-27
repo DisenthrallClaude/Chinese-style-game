@@ -5,6 +5,7 @@ import { box, cyl, cone, sphere, torus, plane, T, beam } from '../world/geo.js';
 import { gearGeo, ringGeo } from '../world/machinery.js';
 import { getMaterials } from '../world/materials.js';
 import { TOWER_BY_ID, TOWERS, ELEMENTS, RULES } from './config.js';
+import { GroundBlobs } from './beasts.js';
 
 function mergeList(list) {
   let count = 0, icount = 0;
@@ -453,6 +454,7 @@ export class TowerManager {
     });
     this.towers = [];
     this.links = new PowerLinks(scene);
+    this.blobs = new GroundBlobs(scene, 140);
     this.supply = 0;
     this.demand = 0;
     this.efficiency = 1;
@@ -547,11 +549,13 @@ export class TowerManager {
     const surge = this.game.surge > 0 ? 0.7 : 0;
     const rateMult = eff * (1 + nightBonus + surge);
 
+    this.blobs.begin();
     for (const tw of this.towers) {
       tw.buildAnim = Math.min(1, tw.buildAnim + dt * 3.2);
       const s = smoothstep(0, 1, tw.buildAnim);
       tw.model.scale.setScalar(0.15 + s * 0.85);
       tw.model.position.y = tw.y - (1 - s) * 1.2;
+      this.blobs.add(tw.x, tw.y, tw.z, 2.5 * s, 0.40 * s);
 
       if (tw.disabled > 0) { tw.disabled -= dt; }
       const active = tw.powered && tw.disabled <= 0;
@@ -613,6 +617,7 @@ export class TowerManager {
       }
     }
 
+    this.blobs.end();
     this.links.update(t, showLinks ? 0.95 : 0.30);
     this.links.shaftGroup.visible = true;
   }

@@ -8,7 +8,8 @@ const browser = await chromium.launch({
   args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--use-gl=angle',
          '--disable-gpu-sandbox', '--no-sandbox', '--ignore-gpu-blocklist'],
 });
-const page = await browser.newPage({ viewport: { width: 1600, height: 900 } });
+const W = parseInt(process.env.SHOT_W || '1600', 10), H = parseInt(process.env.SHOT_H || '900', 10);
+const page = await browser.newPage({ viewport: { width: W, height: H } });
 const logs = [];
 page.on('console', m => { if (m.type()==='error') logs.push('[err] '+m.text().slice(0,300)); });
 page.on('pageerror', e => logs.push('[pageerror] ' + e.message + ' | ' + (e.stack||'').split('\n').slice(1,3).join(' | ')));

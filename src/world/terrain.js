@@ -321,7 +321,7 @@ export class Terrain {
         const x = cx + (u - 0.5) * hx * 2.16;
         const z = cz + (v - 0.5) * hz * 2.16;
         pos.push(x, this.heightAt(x, z) + 0.045, z);
-        uv.push(x * 0.055, z * 0.055);
+        uv.push(x * 0.105, z * 0.105);
       }
     }
     for (let i = 0; i < gh; i++) {

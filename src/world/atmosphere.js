@@ -43,7 +43,7 @@ const mistFrag = /* glsl */`
     // 水平雾片：平视时厚、俯视时薄，才像一层浮在谷中的雾带
     float graze = pow(1.0 - min(1.0, abs(vd.y)), 3.0);
     float d = distance(uCameraP, vWorld);
-    float near = smoothstep(60.0, 190.0, d);
+    float near = smoothstep(90.0, 240.0, d);
     float alpha = a * a * uOpacity * vFade * near * mix(0.02, 1.0, graze);
     if (alpha < 0.004) discard;
     gl_FragColor = vec4(uColor, alpha);
@@ -311,8 +311,8 @@ export class Atmosphere {
   update(dt, t, dayNight, camera) {
     const s = dayNight.state;
     const nightT = clamp(dayNight.lanternLevel, 0, 1);
-    this._c.copy(s.fog).lerp(new THREE.Color(0xffffff), 0.20);
-    this.mist.update(t, camera, this._c, lerp(0.78, 1.05, nightT));
+    this._c.copy(s.fog).lerp(new THREE.Color(0xffffff), 0.10);
+    this.mist.update(t, camera, this._c, lerp(0.40, 0.62, nightT));
     this.dust.update(t, lerp(0.24, 0.05, nightT));
     this.fireflies.update(t, nightT * 0.95);
     this.petals.update(t, lerp(0.30, 0.10, nightT));

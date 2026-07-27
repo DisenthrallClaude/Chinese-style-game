@@ -194,12 +194,13 @@ const gradeShader = {
     uSaturation: { value: 1.14 },
     uLift: { value: new THREE.Color(0.020, 0.030, 0.055) },   // 阴影偏冷
     uGain: { value: new THREE.Color(1.045, 1.005, 0.955) },   // 高光偏暖
-    uVignette: { value: 0.42 },
-    uGrain: { value: 0.013 },
-    uAberration: { value: 0.0016 },
+    uVignette: { value: 0.24 },
+    uGrain: { value: 0.0065 },
+    uAberration: { value: 0.0010 },
     uBleach: { value: 0.0 },
     uFlash: { value: new THREE.Color(0, 0, 0) },
     uHurt: { value: 0.0 },
+    uLiftFloor: { value: 0.045 },
   },
   vertexShader: /* glsl */`
     varying vec2 vUv;
@@ -212,7 +213,7 @@ const gradeShader = {
     precision highp float;
     uniform sampler2D tDiffuse;
     uniform vec2  uResolution;
-    uniform float uTime, uExposure, uContrast, uSaturation, uVignette, uGrain, uAberration, uBleach, uHurt;
+    uniform float uTime, uExposure, uContrast, uSaturation, uVignette, uGrain, uAberration, uBleach, uHurt, uLiftFloor;
     uniform vec3  uLift, uGain, uFlash;
     varying vec2 vUv;
 
@@ -269,8 +270,9 @@ const gradeShader = {
       // ACES
       col = acesFitted(col);
 
-      // 对比（围绕中灰的 S 曲线）
+      // 对比（围绕中灰的 S 曲线）；随后把最暗处稍稍抬起，留住空气感
       col = clamp((col - 0.5) * uContrast + 0.5, 0.0, 1.0);
+      col = col * (1.0 - uLiftFloor) + uLiftFloor;
 
       // 饱和
       float l = dot(col, vec3(0.2126, 0.7152, 0.0722));

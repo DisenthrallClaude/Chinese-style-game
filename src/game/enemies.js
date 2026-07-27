@@ -2,7 +2,7 @@
 import * as THREE from 'three';
 import { Rng, clamp, lerp, smoothstep } from '../core/noise.js';
 import { ENEMIES, RULES, elementMult } from './config.js';
-import { buildBeastGeometry, makeBeastMaterial, beastUniforms, HealthBars } from './beasts.js';
+import { buildBeastGeometry, makeBeastMaterial, beastUniforms, HealthBars, GroundBlobs } from './beasts.js';
 import { PATHS, HEART, GATES } from '../world/layout.js';
 
 const MAX_PER_TYPE = 46;
@@ -92,6 +92,7 @@ export class EnemyManager {
       this.pools[key] = new TypePool(scene, ENEMIES[key], this.material);
     }
     this.bars = new HealthBars(scene, 200);
+    this.blobs = new GroundBlobs(scene, 220);
     this.all = [];
     this._m = new THREE.Matrix4();
     this._q = new THREE.Quaternion();
@@ -276,6 +277,7 @@ export class EnemyManager {
 
     // 写实例数据
     this.bars.begin();
+    this.blobs.begin();
     for (const key of Object.keys(this.pools)) {
       const pool = this.pools[key];
       const L = pool.list;
@@ -295,6 +297,14 @@ export class EnemyManager {
         pool.aState.array[i * 3] = e.flash;
         pool.aState.array[i * 3 + 1] = e.freeze > 0 ? 1 : 0;
         pool.aState.array[i * 3 + 2] = e.dying;
+        // 接地阴影：飞行的挂在地面上、随高度扩散变淡
+        if (e.alive || e.dying > 0) {
+          const gy = this.terrain.heightFast(e.x, e.z);
+          const lift = clamp(e.y - gy, 0, 26);
+          const spread = 1 + lift * 0.075;
+          this.blobs.add(e.x, gy, e.z, (1.5 + e.scale * 1.5) * spread * s,
+            (0.46 - lift * 0.014) * (1 - e.dying));
+        }
         if (e.alive && e.hp < e.maxHp * 0.999) {
           const h = e.def.boss ? 5.4 * e.scale : 2.6 * e.scale;
           this.bars.add(e.x, e.y + h + 1.0, e.z, clamp(e.hp / e.maxHp, 0, 1),
@@ -309,6 +319,7 @@ export class EnemyManager {
       }
     }
     this.bars.end();
+    this.blobs.end();
   }
 
   clear() {
@@ -319,6 +330,7 @@ export class EnemyManager {
       this.pools[k].mesh.count = 0;
     }
     this.bars.begin(); this.bars.end();
+    this.blobs.begin(); this.blobs.end();
   }
 
   get count() { return this.all.filter(e => e.alive).length; }

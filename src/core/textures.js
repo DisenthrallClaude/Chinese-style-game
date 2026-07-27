@@ -14,7 +14,7 @@ function mkCanvas(w, h = w) {
   return c;
 }
 
-function toTexture(canvas, repeat = 1, aniso = 8) {
+function toTexture(canvas, repeat = 1, aniso = 16) {
   const t = new THREE.CanvasTexture(canvas);
   t.wrapS = t.wrapT = THREE.RepeatWrapping;
   t.repeat.set(repeat, repeat);
@@ -28,7 +28,7 @@ function toDataTexture(canvas, repeat = 1) {
   const t = new THREE.CanvasTexture(canvas);
   t.wrapS = t.wrapT = THREE.RepeatWrapping;
   t.repeat.set(repeat, repeat);
-  t.anisotropy = 4;
+  t.anisotropy = 8;
   t.colorSpace = THREE.NoColorSpace;
   t.needsUpdate = true;
   return t;
@@ -149,7 +149,7 @@ function drawWood(size, opts = {}) {
 /* ---------------------------------------------------------------- 瓦 */
 // 中式筒瓦屋面：一垄一垄的半圆瓦，青灰釉，带苔与积尘
 function drawRoofTile(size, opts = {}) {
-  const { cols = 9, seed = 21, hue = [62, 72, 80] } = opts;
+  const { cols = 9, seed = 21, hue = [84, 98, 110] } = opts;
   const c = mkCanvas(size);
   const ctx = c.getContext('2d');
   const rng = new Rng(seed);
@@ -190,7 +190,7 @@ function drawRoofTile(size, opts = {}) {
 
 /* -------------------------------------------------------------- 青石板 */
 function drawFlagstone(size, opts = {}) {
-  const { cells = 7, seed = 33, base = [116, 112, 102], joint = [44, 42, 37] } = opts;
+  const { cells = 7, seed = 33, base = [122, 119, 111], joint = [72, 70, 65] } = opts;
   const c = mkCanvas(size);
   const ctx = c.getContext('2d');
   const rng = new Rng(seed);
@@ -220,7 +220,7 @@ function drawFlagstone(size, opts = {}) {
       if (d < d1) { d2 = d1; d1 = d; id = i; } else if (d < d2) { d2 = d; }
     }
     const edge = d2 - d1;                       // 到石缝的距离
-    const jw = size * 0.016;
+    const jw = size * 0.011;
     const inStone = smoothstep(jw * 0.35, jw * 1.8, edge);
     // 每块石头自身色差
     const h = ((id * 2654435761) >>> 0) / 4294967296;
@@ -229,7 +229,7 @@ function drawFlagstone(size, opts = {}) {
     const mottle = noise.tileFbm(x * 1.1 + id * 3, y * 1.1, size, size, 4, 2) * 0.07;
     // 边缘倒角带来的亮边
     const bevel = smoothstep(jw * 0.4, jw * 2.6, edge);
-    const lightEdge = (1 - bevel) * 0.09;
+    const lightEdge = (1 - bevel) * 0.055;
     let r = base[0] * tint * (1 + grain + mottle + lightEdge);
     let g = base[1] * tint * (1 + grain + mottle + lightEdge);
     let b = base[2] * tint * (1 + grain + mottle * 0.8 + lightEdge);
@@ -303,12 +303,12 @@ function drawGrassGround(size) {
     const n2 = noise.tileFbm(x * 9, y * 9, size, size, 3, 13) * 0.5 + 0.5;
     const patch = noise.tileFbm(x * 0.9, y * 0.9, size, size, 3, 1.6) * 0.5 + 0.5;
     const v = n1 * 0.6 + n2 * 0.4;
-    let r = lerp(62, 132, v) * lerp(0.85, 1.15, patch);
-    let g = lerp(86, 166, v) * lerp(0.85, 1.12, patch);
-    let b = lerp(40, 78, v) * lerp(0.9, 1.1, patch);
+    let r = lerp(84, 158, v) * lerp(0.86, 1.16, patch);
+    let g = lerp(118, 198, v) * lerp(0.86, 1.13, patch);
+    let b = lerp(58, 96, v) * lerp(0.9, 1.12, patch);
     // 枯黄
     const dry = smoothstep(0.66, 0.95, patch);
-    r = lerp(r, 142, dry * 0.4); g = lerp(g, 130, dry * 0.32); b = lerp(b, 74, dry * 0.3);
+    r = lerp(r, 176, dry * 0.36); g = lerp(g, 170, dry * 0.30); b = lerp(b, 96, dry * 0.28);
     return [clamp(r, 0, 255), clamp(g, 0, 255), clamp(b, 0, 255)];
   });
   return c;
@@ -388,7 +388,7 @@ function drawPlaster(size) {
 /* ------------------------------------------------------- 树叶 / 草 蒙版 */
 // 一簇树叶的 RGBA 贴图，用于交叉面片
 function drawLeafCluster(size, opts = {}) {
-  const { seed = 3, color = [58, 96, 40], hi = [128, 168, 74], count = 260 } = opts;
+  const { seed = 3, color = [76, 122, 52], hi = [162, 202, 96], count = 300 } = opts;
   const c = mkCanvas(size);
   const ctx = c.getContext('2d');
   ctx.clearRect(0, 0, size, size);
@@ -426,7 +426,7 @@ function drawLeafCluster(size, opts = {}) {
       const i = (y * size + x) * 4;
       const dx = (x - cx) / (size * 0.5), dy = (y - cy) / (size * 0.5);
       const r = Math.hypot(dx, dy);
-      const fall = 1 - smoothstep(0.72, 1.02, r);
+      const fall = 1 - smoothstep(0.58, 1.04, r);
       d[i + 3] = clamp(d[i + 3] * fall, 0, 255);
     }
   }
@@ -435,7 +435,7 @@ function drawLeafCluster(size, opts = {}) {
 }
 
 function drawGrassBlades(size, opts = {}) {
-  const { seed = 5, color = [54, 82, 34], hi = [104, 132, 58], count = 22 } = opts;
+  const { seed = 5, color = [70, 108, 46], hi = [138, 172, 78], count = 24 } = opts;
   const c = mkCanvas(size);
   const ctx = c.getContext('2d');
   ctx.clearRect(0, 0, size, size);
@@ -604,14 +604,14 @@ const builders = {
   woodDark: () => drawWood(512, { seed: 13, base: [92, 66, 44], dark: [40, 28, 18], light: [140, 108, 72], weather: 0.72 }),
   woodRed: () => drawWood(512, { seed: 23, base: [128, 58, 42], dark: [62, 24, 18], light: [178, 92, 62], weather: 0.3, grain: 20 }),
   roofTile: () => drawRoofTile(512, { cols: 9 }),
-  roofTileDark: () => drawRoofTile(512, { cols: 11, seed: 44, hue: [48, 56, 64] }),
-  flagstone: () => drawFlagstone(512, { cells: 9, base: [126, 121, 110] }),
-  flagstoneFine: () => drawFlagstone(512, { cells: 11, seed: 77, base: [124, 119, 108] }),
+  roofTileDark: () => drawRoofTile(512, { cols: 11, seed: 44, hue: [62, 74, 86] }),
+  flagstone: () => drawFlagstone(512, { cells: 9, base: [124, 121, 112] }),
+  flagstoneFine: () => drawFlagstone(512, { cells: 11, seed: 77, base: [122, 120, 112] }),
   rock: () => drawRock(512, {}),
   rockDark: () => drawRock(512, { base: [86, 88, 92], seed: 88, strata: 5 }),
   soil: () => drawSoil(512, {}),
   grassGround: () => drawGrassGround(512),
-  paper: () => drawPaper(256, [228, 182, 118]),
+  paper: () => drawPaper(256, [206, 160, 100]),
   paperWhite: () => drawPaper(256, [214, 204, 178]),
   clothRed: () => drawCloth(256, { base: [158, 40, 36] }),
   clothIndigo: () => drawCloth(256, { base: [42, 62, 104], seed: 65 }),
@@ -620,9 +620,9 @@ const builders = {
   gold: () => drawBronze(256, { base: [198, 158, 66], patina: [150, 116, 48], seed: 95 }),
   plaster: () => drawPlaster(512),
   leafA: () => drawLeafCluster(256, { seed: 3 }),
-  leafB: () => drawLeafCluster(256, { seed: 8, color: [46, 82, 36], hi: [110, 152, 62] }),
-  leafC: () => drawLeafCluster(256, { seed: 15, color: [72, 96, 42], hi: [156, 178, 84] }),
-  leafPine: () => drawLeafCluster(256, { seed: 27, color: [32, 62, 46], hi: [72, 110, 70], count: 320 }),
+  leafB: () => drawLeafCluster(256, { seed: 8, color: [62, 106, 46], hi: [142, 186, 84] }),
+  leafC: () => drawLeafCluster(256, { seed: 15, color: [96, 130, 56], hi: [190, 210, 108] }),
+  leafPine: () => drawLeafCluster(256, { seed: 27, color: [46, 84, 60], hi: [102, 146, 92], count: 340 }),
   grassTuft: () => drawGrassBlades(128, {}),
   latticeGrid: () => drawLattice(256, { style: 'grid' }),
   latticeIce: () => drawLattice(256, { style: 'ice', seed: 19 }),

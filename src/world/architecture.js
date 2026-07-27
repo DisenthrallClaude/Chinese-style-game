@@ -135,6 +135,25 @@ export function addRoof(B, cx, cy, cz, L, D, opts = {}) {
     }
   }
 
+  // 悬山两端的博风板与悬鱼
+  if (!hip) {
+    for (const s of [-1, 1]) {
+      const ex = s * (L / 2 + overhang * 0.94);
+      const wx = cx + Math.cos(ry) * ex, wz = cz - Math.sin(ry) * ex;
+      for (const sz of [-1, 1]) {
+        const bz = sz * (D / 2 + overhang) * 0.52;
+        const px = wx + Math.sin(ry) * bz, pz = wz + Math.cos(ry) * bz;
+        B.add('woodDark', beam(
+          cx + Math.cos(ry) * ex, cy + roofH * 0.96, cz - Math.sin(ry) * ex,
+          px + Math.sin(ry) * bz * 0.9, cy + upturn * 0.5 + 0.18, pz + Math.cos(ry) * bz * 0.9,
+          0.12, 0.42, 0.7));
+      }
+      // 悬鱼
+      B.add('woodRed', T(box(0.44, 0.66, 0.10, 1.1), wx, cy + roofH * 0.62, wz, 0, ry, 0));
+      B.add('gold', T(sphere(0.11, 7, 6, 1.6), wx, cy + roofH * 0.62, wz + 0.06));
+    }
+  }
+
   // 檐口滴水
   const eaveY = cy + 0.02;
   const per = 0.42;
@@ -262,6 +281,22 @@ export function addBuilding(B, o = {}) {
       // 木裙板
       B.add('woodDark', T(box(len, 0.5, 0.28, 0.5), wx, y0 + 0.55, wz, 0, faceRy, 0));
     });
+
+    // 檐下挂落：一排短垂柱，近看很出效果
+    if (f === floors - 1) {
+      for (const s of sides) {
+        const len = Math.hypot(s.bx - s.ax, s.bz - s.az);
+        const cnt = Math.max(3, Math.round(len / 0.62));
+        const faceRy = ry + Math.atan2(s.n[0], s.n[1]);
+        for (let i = 1; i < cnt; i++) {
+          const t = i / cnt;
+          const [wx, wz] = rot(lerp(s.ax, s.bx, t), lerp(s.az, s.bz, t));
+          B.add('woodRed', T(box(0.07, 0.26, 0.07, 1.4), wx, y1 - 0.52, wz, 0, faceRy, 0));
+        }
+        const [mx2, mz2] = rot((s.ax + s.bx) / 2, (s.az + s.bz) / 2);
+        B.add('woodRed', T(box(len, 0.08, 0.09, 0.8), mx2, y1 - 0.40, mz2, 0, faceRy + Math.PI / 2, 0));
+      }
+    }
 
     // 斗拱（顶层檐下）
     if (f === floors - 1) {

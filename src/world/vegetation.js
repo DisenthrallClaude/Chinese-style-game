@@ -95,14 +95,16 @@ function crownGeo(rng, { R = 3.6, blobs = 7, quads = 3 } = {}) {
   const parts = [];
   for (let b = 0; b < blobs; b++) {
     const a = rng.range(0, Math.PI * 2);
-    const rr = Math.pow(rng.next(), 0.5) * R * 0.62;
+    // 外圈密、中心疏，整体压成扁穹顶，比正球更像阔叶树
+    const t = Math.pow(rng.next(), 0.42);
+    const rr = t * R * 0.92;
     const cx = Math.cos(a) * rr, cz = Math.sin(a) * rr;
-    const cy = rng.range(-R * 0.28, R * 0.42);
-    const s = R * rng.range(0.44, 0.78);
+    const cy = R * (0.34 - t * t * 0.62) + rng.range(-0.18, 0.18) * R;
+    const s = R * rng.range(0.44, 0.70) * (1.08 - t * 0.26);
     for (let q = 0; q < quads; q++) {
-      const g = plane(s, s, 1 / s);
-      const ang = (q / quads) * Math.PI + rng.range(-0.3, 0.3);
-      T(g, cx, cy, cz, rng.range(-0.4, 0.4), ang, rng.range(-0.3, 0.3));
+      const g = plane(s, s * rng.range(0.78, 1.0), 1 / s);
+      const ang = (q / quads) * Math.PI + rng.range(-0.35, 0.35);
+      T(g, cx, cy, cz, rng.range(-0.5, 0.5), ang, rng.range(-0.35, 0.35));
       parts.push(g);
     }
   }
@@ -115,15 +117,19 @@ function pineGeo(rng, { h = 11, r = 0.42 } = {}) {
   parts.push(T(cyl(r * 0.24, r, h, 7, 0.6), 0, h / 2, 0));
   return { trunk: mergeList(parts), h };
 }
-function pineCrown(rng, { h = 11, R = 2.6, layers = 5 } = {}) {
+function pineCrown(rng, { h = 11, R = 2.6, layers = 7 } = {}) {
   const parts = [];
   for (let i = 0; i < layers; i++) {
     const t = i / (layers - 1);
-    const y = h * (0.30 + t * 0.66);
-    const rr = R * (1 - t * 0.78) * rng.range(0.9, 1.12);
-    for (let q = 0; q < 3; q++) {
-      const g = plane(rr * 2.0, rr * 1.15, 1 / (rr * 2));
-      T(g, rng.range(-0.2, 0.2), y, rng.range(-0.2, 0.2), rng.range(-0.16, 0.16), (q / 3) * Math.PI + rng.range(-0.2, 0.2), 0);
+    const y = h * (0.24 + t * 0.74);
+    const rr = R * (1 - t * 0.82) * rng.range(0.88, 1.14);
+    // 每层围一圈小片，松针的层叠感靠这个
+    const n = Math.max(3, Math.round(5 - t * 2));
+    for (let q = 0; q < n; q++) {
+      const a = (q / n) * Math.PI * 2 + rng.range(-0.4, 0.4);
+      const g = plane(rr * 1.35, rr * 0.85, 1 / (rr * 1.4));
+      T(g, Math.cos(a) * rr * 0.42, y + rng.range(-0.12, 0.12) * R,
+        Math.sin(a) * rr * 0.42, rng.range(-0.22, -0.05), a + Math.PI / 2, rng.range(-0.12, 0.12));
       parts.push(g);
     }
   }
@@ -164,9 +170,9 @@ function bambooGeo(rng) {
 /* --------------------------------------------------- 灌木 */
 function bushGeo(rng) {
   const parts = [];
-  const n = rng.int(3, 5);
+  const n = rng.int(5, 8);
   for (let i = 0; i < n; i++) {
-    const s = rng.range(0.9, 1.9);
+    const s = rng.range(0.6, 1.3);
     const g = plane(s, s * 0.8, 1 / s);
     T(g, rng.range(-0.5, 0.5), s * 0.34, rng.range(-0.5, 0.5), rng.range(-0.2, 0.2), rng.range(0, 3.14), rng.range(-0.2, 0.2));
     parts.push(g);
@@ -257,7 +263,7 @@ export class Vegetation {
     for (let v = 0; v < 3; v++) {
       const r2 = new Rng(1000 + v * 77);
       const { geo, topY } = trunkGeo(r2, { h: r2.range(8, 12), r: r2.range(0.45, 0.66), branches: 5, lean: 0.09 });
-      const crown = crownGeo(r2, { R: r2.range(3.6, 4.8), blobs: 16, quads: 3 });
+      const crown = crownGeo(r2, { R: r2.range(3.9, 5.2), blobs: 26, quads: 2 });
       const cg = crown.clone();
       cg.translate(0, topY * 0.86, 0);
       const sub = bigSpots.filter((_, i) => i % 3 === v);
@@ -274,7 +280,7 @@ export class Vegetation {
     for (let v = 0; v < 2; v++) {
       const r2 = new Rng(3000 + v * 31);
       const { geo, topY } = trunkGeo(r2, { h: r2.range(5, 7.5), r: 0.30, branches: 3, lean: 0.12 });
-      const crown = crownGeo(r2, { R: 2.7, blobs: 10, quads: 2 });
+      const crown = crownGeo(r2, { R: 3.0, blobs: 16, quads: 2 });
       crown.translate(0, topY * 0.84, 0);
       const sub = midSpots.filter((_, i) => i % 2 === v);
       this._instance(geo, this.M.woodDark, sub, new Rng(700 + v), [0.8, 1.3]);
@@ -288,7 +294,7 @@ export class Vegetation {
     for (let v = 0; v < 2; v++) {
       const r2 = new Rng(5000 + v * 53);
       const { trunk, h } = pineGeo(r2, { h: r2.range(9, 14), r: 0.4 });
-      const crown = pineCrown(r2, { h: r2.range(9, 14), R: r2.range(2.2, 3.2), layers: 5 });
+      const crown = pineCrown(r2, { h: r2.range(9, 14), R: r2.range(2.3, 3.3), layers: 7 });
       const sub = pineSpots.filter((_, i) => i % 2 === v);
       this._instance(trunk, this.M.woodDark, sub, new Rng(900 + v), [0.75, 1.5]);
       this._instance(crown, this.pineMat, sub, new Rng(900 + v), [0.75, 1.5]);

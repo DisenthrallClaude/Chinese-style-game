@@ -86,6 +86,7 @@ async function main() {
   }));
   const hud = new HUD(game);
   game.attachHUD(hud);
+  rig.cursorProvider = () => (game.state === 'menu' ? null : game.cursorWorld);
   // 炊烟接到氛围系统
   for (const [sx, sy, sz] of village.smokeSpots) atmo.addSmoke(sx, sy, sz);
 
