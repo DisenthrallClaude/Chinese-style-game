@@ -28,9 +28,10 @@
   </div>
 
   <div class="loader-core">
-    <!-- 机关齿轮组：齿数、节圆、转速比都是算出来的，真的在啮合 -->
+    <!-- 机关齿轮组：齿数、节圆、转速比都是算出来的，真的在啮合。
+         每一枚齿轮由若干层轮廓沿轴向叠出厚度，整组再后仰放进 3D 场景里。 -->
     <div class="gear-rig">
-      <svg id="gearSvg" viewBox="-120 -120 240 240" aria-label="机关运转中"></svg>
+      <div class="gear-stage" id="gearStage" aria-label="机关运转中"></div>
     </div>
     <div class="loader-verse">「引水为力，铸械为兵，守此一谷山川。」</div>
   </div>
@@ -140,6 +141,7 @@
     <div class="next-wave" id="nextWave">
       <div class="nw-title">下一波 · <span id="nwName">—</span></div>
       <div class="nw-list" id="nwList"></div>
+      <div class="nw-advice" id="nwAdvice"></div>
     </div>
   </div>
 

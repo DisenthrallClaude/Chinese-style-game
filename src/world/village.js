@@ -22,8 +22,8 @@ import {
   addWorkbench, addWell, addFence, addCart, addIncenseBurner, addRockCluster, addRopeLine, addSignboard,
 } from './props.js';
 import {
-  LEVEL, HEART, GATES, BRIDGE, RIVER, WATER_Y, WATER_KIND, WATER_SHEET,
-  addFootprint, PATHS, TRUNK_LINE, distToRiver, distToAnyPath, inFootprint,
+  LEVEL, HEART, GATES, BRIDGE, BRIDGES, RIVER, WATER_Y, WATER_KIND, WATER_SHEET,
+  addFootprint, addDeck, PATHS, TRUNK_LINE, distToRiver, distToAnyPath, inFootprint,
 } from './layout.js';
 
 export function buildVillage(scene, terrain) {
@@ -110,15 +110,34 @@ export class Village {
       this.placed.push(s);
     }
 
-    // 齿轮塔地台
+    // 齿轮塔地台。塔连着一道外挂的木梯，占地比看上去大 ——
+    // 原先只查了兽道和水，没查已选中的宅基，昆仑与归墟的塔就一头扎进配殿里，
+    // 楼梯直接从人家屋顶穿出来。这里补上避让：先让开，让不开就不建。
     const gt = this.V.gearTower;
     if (gt) {
-      const okPath = distToAnyPath(gt.x, gt.z) > 8;
-      const y = T2.groundY(gt.x, gt.z);
-      if (okPath && y > waterY + 1.4) {
-        this.towerSite = { ...gt, y: Math.round(y * 4) / 4 };
-        T2.registerPad(gt.x, gt.z, 5.4, 5.4, 0, this.towerSite.y, 3.5);
-        addFootprint(gt.x, gt.z, 6, 6, 0);
+      const R = 6.4;
+      const clashAt = (cx, cz) => {
+        for (const p2 of this.placed) {
+          if (Math.hypot(cx - p2.x, cz - p2.z) < R + Math.hypot(p2.w, p2.d) / 2 + 1.2) return true;
+        }
+        return Math.hypot(cx - HEART.x, cz - HEART.z) < R + 9;
+      };
+      let gx = gt.x, gz = gt.z, ok = false;
+      for (let step = 0; step <= 18 && !ok; step += 3) {
+        for (let k = 0; k < (step === 0 ? 1 : 8); k++) {
+          const a2 = (k / 8) * Math.PI * 2;
+          const cx = gt.x + Math.cos(a2) * step, cz = gt.z + Math.sin(a2) * step;
+          if (distToAnyPath(cx, cz) <= 8) continue;
+          if (T2.groundY(cx, cz) <= waterY + 1.4) continue;
+          if (clashAt(cx, cz)) continue;
+          gx = cx; gz = cz; ok = true; break;
+        }
+      }
+      if (ok) {
+        const y = T2.groundY(gx, gz);
+        this.towerSite = { ...gt, x: gx, z: gz, y: Math.round(y * 4) / 4 };
+        T2.registerPad(gx, gz, 5.4, 5.4, 0, this.towerSite.y, 3.5);
+        addFootprint(gx, gz, R, R, 0);
       }
     }
 
@@ -165,6 +184,9 @@ export class Village {
         tileMat: rng.chance(0.35) ? V.roofB : V.roofA,
         wallMat: rng.chance(0.72) ? V.wallA : V.wallB,
         postMat: rng.chance(0.3) ? V.postMat : 'woodDark',
+        // 屋舍形制随关而变：夯土碉楼／井干木屋／干栏船屋／重檐玉阙
+        style: this.theme,
+        stoneMat: V.stoneMat, cutMat: V.cutMat, big: s.big,
         seed: s.x * 13 + s.z,
       });
 
@@ -189,7 +211,7 @@ export class Village {
         const fz = s.d / 2 + 1.0;
         addSignboard(B, s.x + sin * fz, s.y + 0.75 + s.floorH - 0.55, s.z + cos * fz, s.ry, 2.8, 0.9);
       }
-      // 干栏式：台基下面露出一排木桩
+      // 干栏式：台基下面露出一排木桩（船屋自带平台，这里补的是落到地面那一截）
       if (V.stilts) this._stilts(B, s);
       // 雪顶：屋脊上压一层积雪
       if (V.snowCap) this._snowCap(B, s);
@@ -339,23 +361,69 @@ export class Village {
   /* ---- 桥 ---- */
   _bridges(B, rng) {
     const T2 = this.terrain;
-    if (BRIDGE) {
-      // 桥面高程与 levels.js 的 bridgeDeck 用同一组参数，
-      // 两边对不上的话凶兽就会从桥拱底下穿过去
+    const V = this.V;
+    for (const BR of BRIDGES) {
+      // 两个桥头各自量一次地面高度：桥是架在岸上的，不是垫在土坝上的。
+      // 桥面另登记一份高程（addDeck），凶兽走它；地形底下照旧是河床。
+      const ry = BR.angle;
+      const half = BR.span / 2;
+      const cs = Math.cos(ry), sn = Math.sin(ry);
+      const headAt = (sgn) => {
+        // 桥头要退到河床影响之外再取样：贴着桥跨取，量到的还是被压平的河底，
+        // 整座桥会矮下去，拱顶几乎贴着水面（幽都的冻河尤其明显）。
+        // 取两处的高者，再兜一道底 —— 桥面无论如何要高出水面一米有余。
+        let best = -1e9;
+        for (const back of [half + 4.5, half + 9.0]) {
+          const px = BR.x + sn * sgn * back;
+          const pz = BR.z + cs * sgn * back;
+          best = Math.max(best, T2.heightAt(px, pz));
+        }
+        return Math.max(best, WATER_Y + 1.35);
+      };
+      const y0 = headAt(-1), y1 = headAt(1);
+      const width = BR.halfW * 2 + 1.4;
       addArchBridge(B, {
-        x: BRIDGE.x, y: 0, z: BRIDGE.z, ry: BRIDGE.angle,
-        span: BRIDGE.span, width: BRIDGE.halfW * 2 + 0.8,
-        rise: BRIDGE.rise, deckY: BRIDGE.y,
+        x: BR.x, z: BR.z, ry,
+        span: BR.span, width, rise: BR.rise,
+        y0, y1, waterY: WATER_Y,
+        stoneMat: V.stoneMat, cutMat: V.cutMat, railMat: V.cutMat,
       });
-      addStoneLion(B, BRIDGE.x - 4.0, T2.heightAt(BRIDGE.x - 4, BRIDGE.z + 10) + 0.1, BRIDGE.z + 10, 0.1, 0.9);
-      addStoneLion(B, BRIDGE.x + 4.0, T2.heightAt(BRIDGE.x + 4, BRIDGE.z + 10) + 0.1, BRIDGE.z + 10, 0.1, 0.9);
+      addDeck({
+        x: BR.x, z: BR.z, ry,
+        span: BR.span + 3.0, halfW: BR.halfW + 0.4,
+        y0: y0 - 0.15, y1: y1 - 0.15, rise: BR.rise, feather: 1.4,
+      });
+      addFootprint(BR.x, BR.z, width / 2 + 0.6, BR.span / 2 + 2.0, ry);
+      for (const s of [-1, 1]) {
+        const lx = BR.x + cs * (s * 4.2) + sn * (half + 3.6);
+        const lz = BR.z - sn * (s * 4.2) + cs * (half + 3.6);
+        addStoneLion(B, lx, T2.heightAt(lx, lz) + 0.1, lz, ry, 0.9);
+      }
     }
-    // 溪上的两道便桥（只在有明确河道的关卡）
+    // 溪上的两道便桥（只在有明确河道的关卡）。桥面高度按两岸实际地面来，
+    // 一律按 WATER_Y + 2 摆的话，岸高的那一关整座桥会陷进土里
     if (!WATER_SHEET) {
       for (const [bx, bz, ry, span, wd] of [[-44, -17.6, 0.06, 15, 3.2], [52, -15.4, -0.1, 15, 2.8]]) {
         const p = RIVER.distanceTo(bx, bz);
         if (p > 14) continue;                       // 河不在这儿就别架桥
-        addPlankBridge(B, { x: bx, y: WATER_Y + 2.0, z: bz, ry, span, width: wd, sag: 0.35 });
+        // 石桥已经架在这一段了就别再叠一道木桥 ——
+        // 炎火之山两座石桥正好落在这两个老位置上
+        if (BRIDGES.some(b => Math.hypot(b.x - bx, b.z - bz) < 18)) continue;
+        const cs = Math.cos(ry), sn = Math.sin(ry);
+        const ea = T2.heightAt(bx + sn * (span / 2 + 1), bz + cs * (span / 2 + 1));
+        const eb = T2.heightAt(bx - sn * (span / 2 + 1), bz - cs * (span / 2 + 1));
+        const deck = Math.max(WATER_Y + 1.2, (ea + eb) / 2 + 0.35);
+        addPlankBridge(B, { x: bx, y: deck, z: bz, ry, span, width: wd, sag: 0.35 });
+        // 两头的木排架，让桥面接得住岸
+        for (const [ey, sgn] of [[ea, 1], [eb, -1]]) {
+          const px = bx + sn * sgn * (span / 2 - 0.4), pz = bz + cs * sgn * (span / 2 - 0.4);
+          const hgt = deck - ey + 0.6;
+          if (hgt < 0.5) continue;
+          for (const sd of [-1, 1]) {
+            B.add('woodDark', T(cyl(0.16, 0.20, hgt, 7, 0.7),
+              px + cs * sd * (wd / 2 - 0.2), ey + hgt / 2 - 0.3, pz - sn * sd * (wd / 2 - 0.2)));
+          }
+        }
       }
     }
   }
@@ -477,8 +545,9 @@ export class Village {
 
     // 神木：各关形制不同
     const trunkMat = theme === 'palace' ? 'jadeM' : (theme === 'stilt' ? 'coralM' : 'woodDark');
-    const leafA = theme === 'desert' ? 'leafPine' : (theme === 'snow' ? 'leafPine' : 'leafC');
-    const leafB = theme === 'desert' ? 'leafC' : 'leaf';
+    // 树冠：炎火之山是焦木、幽都是冰封的枯枝、归墟生珊瑚、昆仑是玉叶
+    const leafA = { desert: 'leafPine', snow: 'iceM', stilt: 'leafC', palace: 'leafC' }[theme] || 'leafC';
+    const leafB = { desert: 'leafC', snow: 'snowM', stilt: 'coralM', palace: 'leaf' }[theme] || 'leaf';
     const trunkH = theme === 'desert' ? 15 : 19;
 
     for (let i = 0; i < 5; i++) {
@@ -497,7 +566,7 @@ export class Village {
     }
 
     // 树冠：炎火之山的社树已成焦木，只挂零星的火叶
-    const crownN = theme === 'desert' ? 22 : 58;
+    const crownN = theme === 'desert' ? 22 : (theme === 'snow' ? 26 : 58);
     for (let i = 0; i < crownN; i++) {
       const a = rng.range(0, Math.PI * 2);
       const rr = Math.pow(rng.next(), 0.55) * 8.6;
@@ -708,6 +777,19 @@ export class Village {
     }
   }
 
+  // 一块地上真正能落脚的高度：取周围一圈的最低点。
+  // 直接用中心点的 surfaceY，摆在坎上的东西会有半边悬空
+  _seatY(x, z, r = 1.2) {
+    const T2 = this.terrain;
+    let lo = T2.surfaceY(x, z);
+    for (let i = 0; i < 6; i++) {
+      const a = (i / 6) * Math.PI * 2;
+      const v = T2.surfaceY(x + Math.cos(a) * r, z + Math.sin(a) * r);
+      if (v < lo) lo = v;
+    }
+    return lo;
+  }
+
   /* ============================================================
      各关的招牌陈设
      ============================================================ */
@@ -736,8 +818,8 @@ export class Village {
         const a = rng.range(0, Math.PI * 2), r = rng.range(30, 105);
         const x = Math.cos(a) * r, z = -10 + Math.sin(a) * r;
         if (!put(x, z, 3)) continue;
-        const y = T2.surfaceY(x, z);
         const h = rng.range(3.0, 9.0), w = rng.range(1.4, 3.2);
+        const y = this._seatY(x, z, w * 0.8);
         // 上大下小：风把根部掏细了，这是雅丹的样子
         B.add('rockRedM', T(frustum(w * 1.15, w * 0.95, w * 0.52, w * 0.46, h, 0.35), x, y + h / 2, z, 0, rng.range(0, 3.14), 0));
         B.add('rockRedM', T(box(w * 1.3, 0.42, w * 1.1, 0.5), x, y + h - 0.1, z, 0, rng.range(0, 3.14), 0));
@@ -750,10 +832,13 @@ export class Village {
         const off = (rng.chance(0.5) ? 1 : -1) * rng.range(6, 12);
         const x = rx - tz * off, z = rz + tx * off;
         if (Math.hypot(x, z + 10) > 120) continue;
-        const y = T2.surfaceY(x, z);
+        const sw = rng.range(1.2, 3.0), sh = rng.range(0.5, 1.4), sd = rng.range(1.0, 2.4);
+        // 坐到四围最低点上，再往下埋三分之一 —— 沟壁是斜的，
+        // 按中心点摆的话半块石头会吊在半空
+        const y = this._seatY(x, z, Math.max(sw, sd) * 0.5);
         if (y < WATER_Y) continue;
-        B.add('obsidian', T(box(rng.range(1.2, 3.0), rng.range(0.5, 1.4), rng.range(1.0, 2.4), 0.5),
-          x, y + 0.3, z, rng.range(-0.3, 0.3), rng.range(0, 3.14), rng.range(-0.3, 0.3)));
+        B.add('obsidian', T(box(sw, sh, sd, 0.5),
+          x, y + sh * 0.16, z, rng.range(-0.2, 0.2), rng.range(0, 3.14), rng.range(-0.2, 0.2)));
       }
     }
 
@@ -763,9 +848,9 @@ export class Village {
         const a = rng.range(0, Math.PI * 2), r = rng.range(34, 110);
         const x = Math.cos(a) * r, z = -16 + Math.sin(a) * r;
         if (distToAnyPath(x, z) < 5 || inFootprint(x, z, 2)) continue;
-        const y = T2.surfaceY(x, z);
-        if (y < WATER_Y + 0.6) continue;
         const h = rng.range(2.4, 7.5);
+        const y = this._seatY(x, z, 1.4);
+        if (y < WATER_Y + 0.6) continue;
         B.add('iceM', T(cone(rng.range(0.6, 1.5), h, 6, 0.7), x, y + h / 2, z, rng.range(-0.12, 0.12), rng.range(0, 3.14), rng.range(-0.12, 0.12)));
         if (rng.chance(0.5)) {
           const h2 = h * rng.range(0.4, 0.7);

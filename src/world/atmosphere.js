@@ -129,14 +129,21 @@ class ParticleField {
 class Birds {
   constructor(scene, count = 18) {
     const g = new THREE.BufferGeometry();
-    // 两片三角构成的一只鸟
+    // 一只鸟：细身子 + 两段后掠的翼。原先是两片一米多的大三角，
+    // 俯瞰构图里飞到近处就是一块糊在村子上的黑板
     const pos = new Float32Array([
-      0, 0, 0, -1, 0.12, -0.5, -1, 0.12, 0.5,
-      0, 0, 0, 1, 0.12, 0.5, 1, 0.12, -0.5,
+      // 身
+      0.08, 0, 0.62, -0.08, 0, 0.62, 0, 0, -0.78,
+      // 左翼：内段、外段
+      0, 0.02, 0.20, -0.58, 0.09, 0.00, -0.10, 0, -0.32,
+      -0.58, 0.09, 0.00, -1.10, 0.01, -0.40, -0.10, 0, -0.32,
+      // 右翼
+      0, 0.02, 0.20, 0.10, 0, -0.32, 0.58, 0.09, 0.00,
+      0.58, 0.09, 0.00, 0.10, 0, -0.32, 1.10, 0.01, -0.40,
     ]);
     g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
     g.computeVertexNormals();
-    const mat = new THREE.MeshBasicMaterial({ color: 0x1a1a1e, side: THREE.DoubleSide, fog: true, transparent: true, opacity: 0.85 });
+    const mat = new THREE.MeshBasicMaterial({ color: 0x2a2830, side: THREE.DoubleSide, fog: true, transparent: true, opacity: 0.62 });
     this.mesh = new THREE.InstancedMesh(g, mat, count);
     this.mesh.frustumCulled = false;
     this.count = count;
@@ -145,11 +152,11 @@ class Birds {
     for (let i = 0; i < count; i++) {
       this.data.push({
         r: this.rng.range(90, 210),
-        y: this.rng.range(52, 118),
+        y: this.rng.range(74, 150),
         sp: this.rng.range(0.055, 0.115) * (this.rng.chance(0.5) ? 1 : -1),
         ph: this.rng.range(0, 6.28),
         flap: this.rng.range(7, 13),
-        s: this.rng.range(1.1, 2.3),
+        s: this.rng.range(0.5, 1.05),
         wob: this.rng.range(3, 10),
       });
     }

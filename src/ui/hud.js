@@ -1,11 +1,21 @@
 // 界面 —— 建造栏、机关详情、秘术、波次预告
-import { TOWERS, TOWER_BY_ID, ENEMIES, SKILLS, ELEMENTS, RULES, endlessWave } from '../game/config.js';
+import {
+  TOWERS, TOWER_BY_ID, ENEMIES, SKILLS, ELEMENTS, RULES, endlessWave,
+  beatenBy, elementMult, COUNTER_MULT,
+} from '../game/config.js';
 import { audio } from '../core/audio.js';
 import { clamp } from '../core/noise.js';
 import { LEVELS } from '../world/levels.js';
 
 const $ = (s) => document.querySelector(s);
-const EL_VAR = { metal: 'var(--el-metal)', wood: 'var(--el-wood)', water: 'var(--el-water)', fire: 'var(--el-fire)', earth: 'var(--el-earth)', none: 'rgba(233,220,190,.5)' };
+// 每一门气的颜色，直接从 ELEMENTS 派生，加新气不必再改这里
+const EL_VAR = { none: 'rgba(233,220,190,.5)' };
+for (const k of Object.keys(ELEMENTS)) {
+  if (k !== 'none') EL_VAR[k] = `var(--el-${k})`;
+}
+const elName = (k) => (ELEMENTS[k] || ELEMENTS.none).name;
+const elDot = (k) => `<i class="el-dot" style="background:${EL_VAR[k]};box-shadow:0 0 6px ${EL_VAR[k]}"></i>`;
+const elChip = (k) => `<b class="el-chip" style="color:${EL_VAR[k]};border-color:${EL_VAR[k]}">${elName(k)}</b>`;
 
 /* 用 canvas 画机关小图标：一枚铜牌上的写意剪影 */
 function towerIcon(def, size = 40) {
@@ -92,6 +102,84 @@ function towerIcon(def, size = 40) {
         const a = (i / 8) * Math.PI * 2;
         path(() => { g.moveTo(Math.cos(a) * u * 0.28, Math.sin(a) * u * 0.28); g.lineTo(Math.cos(a) * u * 0.85, Math.sin(a) * u * 0.85); });
       }
+      break;
+    case 'gust':
+      // 三道旋出去的风
+      for (let i = 0; i < 3; i++) {
+        const y = (i - 1) * u * 0.62;
+        path(() => {
+          g.moveTo(-u, y);
+          g.quadraticCurveTo(u * 0.25, y - u * 0.34, u * 0.72, y);
+          g.quadraticCurveTo(u * 1.02, y + u * 0.26, u * 0.62, y + u * 0.34);
+        });
+      }
+      break;
+    case 'venom':
+      // 束口鼓腹的毒瓮，颈上三点气
+      g.beginPath();
+      g.moveTo(-u * 0.22, -u * 0.62); g.lineTo(u * 0.22, -u * 0.62);
+      g.lineTo(u * 0.16, -u * 0.3);
+      g.quadraticCurveTo(u * 0.92, u * 0.02, u * 0.5, u * 0.74);
+      g.lineTo(-u * 0.5, u * 0.74);
+      g.quadraticCurveTo(-u * 0.92, u * 0.02, -u * 0.16, -u * 0.3);
+      g.closePath(); g.fill();
+      for (let i = 0; i < 3; i++) {
+        g.beginPath();
+        g.arc((i - 1) * u * 0.34, -u * 0.9 + Math.abs(i - 1) * u * 0.16, u * 0.12, 0, 7);
+        g.fill();
+      }
+      break;
+    case 'gu':
+      // 一只蛊虫：分节的身子加六足
+      for (let i = 0; i < 3; i++) {
+        g.beginPath();
+        g.ellipse(0, -u * 0.5 + i * u * 0.52, u * (0.34 - i * 0.04), u * 0.3, 0, 0, 7);
+        g.fill();
+      }
+      g.lineWidth = S * 0.035;
+      for (let i = 0; i < 3; i++) {
+        const y = -u * 0.3 + i * u * 0.48;
+        path(() => { g.moveTo(-u * 0.3, y); g.lineTo(-u * 0.92, y + u * 0.26); });
+        path(() => { g.moveTo(u * 0.3, y); g.lineTo(u * 0.92, y + u * 0.26); });
+      }
+      break;
+    case 'shade':
+      // 一杆幡
+      g.lineWidth = S * 0.05;
+      path(() => { g.moveTo(-u * 0.62, -u); g.lineTo(-u * 0.62, u); });
+      path(() => { g.moveTo(-u * 0.86, -u * 0.78); g.lineTo(u * 0.5, -u * 0.78); });
+      g.beginPath();
+      g.moveTo(-u * 0.34, -u * 0.7); g.lineTo(u * 0.42, -u * 0.7); g.lineTo(u * 0.42, u * 0.42);
+      g.quadraticCurveTo(u * 0.04, u * 0.72, -u * 0.34, u * 0.42);
+      g.closePath(); g.fill();
+      break;
+    case 'sumeru':
+      // 壶口之上悬着的须弥山
+      g.lineWidth = S * 0.05;
+      path(() => {
+        g.moveTo(-u * 0.28, -u * 0.02); g.lineTo(-u * 0.52, u * 0.06);
+        g.quadraticCurveTo(-u * 0.78, u * 0.86, 0, u * 0.94);
+        g.quadraticCurveTo(u * 0.78, u * 0.86, u * 0.52, u * 0.06);
+        g.lineTo(u * 0.28, -u * 0.02);
+      });
+      g.beginPath();
+      g.moveTo(-u * 0.16, -u * 0.34); g.lineTo(u * 0.16, -u * 0.34);
+      g.lineTo(u * 0.56, -u * 0.86); g.lineTo(-u * 0.56, -u * 0.86);
+      g.closePath(); g.fill();
+      break;
+    case 'torrent':
+      // 一注穿透的水矢
+      g.lineWidth = S * 0.05;
+      for (let i = -1; i <= 1; i++) {
+        const y = i * u * 0.46;
+        path(() => {
+          g.moveTo(-u, y);
+          g.quadraticCurveTo(-u * 0.2, y - u * 0.22, u * 0.42, y);
+        });
+      }
+      g.beginPath();
+      g.moveTo(u * 0.34, -u * 0.5); g.lineTo(u, 0); g.lineTo(u * 0.34, u * 0.5);
+      g.closePath(); g.fill();
       break;
     case 'windmill':
       for (let i = 0; i < 5; i++) {
@@ -409,17 +497,36 @@ export class HUD {
     for (const g of def.groups) counts[g.id] = (counts[g.id] || 0) + g.count;
     const list = $('#nwList');
     list.innerHTML = '';
+    // 这一波按「气」加权：哪一门机关能吃到克制加成，权重就是那一门凶兽的数量
+    const score = {};
     for (const id of Object.keys(counts)) {
       const e = ENEMIES[id];
       if (!e) continue;
       const chip = document.createElement('span');
       chip.className = 'nw-chip';
-      const c = ELEMENTS[e.el];
       chip.innerHTML = `<i style="background:${EL_VAR[e.el]};box-shadow:0 0 6px ${EL_VAR[e.el]}"></i>${e.name}<u>×${counts[id]}</u>`;
       chip.onmouseenter = (ev) => this.showTip(this._enemyTip(e), ev);
       chip.onmousemove = (ev) => this.moveTip(ev);
       chip.onmouseleave = () => this.hideTip();
       list.appendChild(chip);
+      const w = counts[id] * (e.boss ? 6 : 1);
+      for (const k of beatenBy(e.el)) score[k] = (score[k] || 0) + w;
+    }
+    // 克制预告：只推本关开得出来的机关
+    const avail = {};
+    for (const t of G.towerList) if (t.el && t.el !== 'none') (avail[t.el] || (avail[t.el] = [])).push(t.name);
+    const best = Object.keys(score)
+      .filter(k => avail[k])
+      .sort((a, b) => score[b] - score[a])
+      .slice(0, 3);
+    const adv = $('#nwAdvice');
+    if (adv) {
+      adv.innerHTML = best.length
+        ? '<span class="nw-adv-l">宜用</span>' + best.map(k =>
+            `<b class="el-chip" style="color:${EL_VAR[k]};border-color:${EL_VAR[k]}"` +
+            ` title="${avail[k].join('、')}">${elName(k)}</b>` +
+            `<span class="nw-adv-t">${avail[k][0]}</span>`).join('')
+        : '<span class="nw-adv-l">此波无明显克制</span>';
     }
     $('#btnWave').classList.toggle('pending', !G.waveActive);
     $('#btnWave').textContent = G.waveActive ? '交 战 中' : '催 兵';
@@ -463,7 +570,7 @@ export class HUD {
       if (d.kind === 'chain') row('连锁', st.chain ?? d.chain, next ? (next.chain ?? d.chain) : null, ' 目标');
       if (d.kind === 'field') row('减速', Math.round((st.slow ?? d.slow) * 100), next ? Math.round((next.slow ?? d.slow) * 100) : null, '%');
       if (d.kind === 'cone') row('灼烧', st.burn ?? d.burn, next ? (next.burn ?? d.burn) : null, '/秒');
-      row('五行', ELEMENTS[d.el].name, null);
+      row('属性', ELEMENTS[d.el].name + '（' + (ELEMENTS[d.el].ring === 'xuan' ? '玄气' : '五行') + '）', null);
       row('机力', st.power ?? d.power, next ? (next.power ?? d.power) : null);
       row('累计伤害', Math.round(t.damageDone), null);
     } else {
@@ -484,9 +591,14 @@ export class HUD {
   /* ---------------------------------------------------- 提示 */
   _towerTip(t) {
     const el = ELEMENTS[t.el];
-    const beat = el.beats ? ELEMENTS[el.beats].name : null;
+    const ringName = el.ring === 'xuan' ? '玄气' : (el.ring === 'wuxing' ? '五行' : '');
+    const beats = (el.beats || []).map(k =>
+      `${elChip(k)}<span class="el-why">${(el.why && el.why[k]) || ''}</span>`).join('');
+    const weak = beatenBy(t.el).map(elChip).join('');
     return `<div class="tip-name">${t.name}</div>
-      <div class="tip-el" style="color:${EL_VAR[t.el]}">${el.name === '·' ? '无属性' : '五行 · ' + el.name}${beat ? '（克 ' + beat + '）' : ''}</div>
+      <div class="tip-el" style="color:${EL_VAR[t.el]}">${el.name === '·' ? '无属性' : ringName + ' · ' + el.name}</div>
+      ${beats ? `<div class="tip-cnt"><span>克</span><div>${beats}</div></div>` : ''}
+      ${weak ? `<div class="tip-cnt bad"><span>受制于</span><div>${weak}</div></div>` : ''}
       ${t.kind !== 'gen' && t.kind !== 'relay' ? `
       <div class="tip-row"><span>伤害</span><b>${t.dmg}</b></div>
       <div class="tip-row"><span>射速</span><b>${t.rate}/秒</b></div>
@@ -500,9 +612,17 @@ export class HUD {
 
   _enemyTip(e) {
     const el = ELEMENTS[e.el];
-    const weak = Object.values(ELEMENTS).filter(x => x.beats === e.el).map(x => x.name).join('、');
+    const ringName = el.ring === 'xuan' ? '玄气' : '五行';
+    // 只列本关开得出来的机关，写一堆用不上的属性没意义
+    const owned = new Set(this.game.towerList.map(t => t.el));
+    const weak = beatenBy(e.el);
+    const have = weak.filter(k => owned.has(k)).map(elChip).join('');
+    const rest = weak.filter(k => !owned.has(k)).map(elChip).join('');
+    const strong = (el.beats || []).filter(k => owned.has(k)).map(elChip).join('');
     return `<div class="tip-name">${e.name}${e.boss ? ' · 凶' : ''}</div>
-      <div class="tip-el" style="color:${EL_VAR[e.el]}">五行 · ${el.name}　畏 ${weak || '—'}</div>
+      <div class="tip-el" style="color:${EL_VAR[e.el]}">${ringName} · ${el.name}</div>
+      <div class="tip-cnt"><span>宜用</span><div>${have || rest || '—'}</div></div>
+      ${strong ? `<div class="tip-cnt bad"><span>忌用</span><div>${strong}</div></div>` : ''}
       <div class="tip-row"><span>气血</span><b>${e.hp}</b></div>
       <div class="tip-row"><span>脚力</span><b>${e.speed}</b></div>
       <div class="tip-row"><span>皮甲</span><b>${e.armor}</b></div>

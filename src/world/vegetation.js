@@ -6,7 +6,7 @@ import { getMaterials } from './materials.js';
 import { colorOf } from '../core/textures.js';
 import { toonify } from '../core/toon.js';
 import {
-  LEVEL, distToAnyPath, distToRiver, inFootprint, VALLEY_C, HEART, WATER_Y,
+  LEVEL, distToAnyPath, distToRiver, inFootprint, VALLEY_C, HEART, WATER_Y, WATER_SHEET,
 } from './layout.js';
 
 const windUniforms = { uTime: { value: 0 }, uWind: { value: 1.0 } };
@@ -287,13 +287,22 @@ export class Vegetation {
 
   // 一块地能不能长东西 —— 水里、路上、屋里、机关上都不行
   _ok(x, z, opts = {}) {
-    const { minPath = 4.5, minRiver = 3.0, pad = 2.5, minY = 0.5 } = opts;
+    const { minPath = 4.5, minRiver = 3.0, pad = 2.5, tall = false } = opts;
+    // 归墟／昆仑的水是铺满全图的一整片：岛缘的浅滩上「刚露头」远远不够，
+    // 一棵树的根盘比一丛草大得多，得离水面高出好几米才不至于泡在里面
+    const minY = tall && WATER_SHEET ? 2.4 : (opts.minY !== undefined ? opts.minY : 1.4);
     if (distToAnyPath(x, z) < minPath) return false;
     if (distToRiver(x, z) < minRiver) return false;
     if (inFootprint(x, z, pad)) return false;
     if (Math.hypot(x - HEART.x, z - HEART.z) < 9) return false;
-    // 水面以下的树会从半透明的水里透出来
+    // 水面以下的树会从半透明的水里透出来。光看中心点不够 ——
+    // 归墟那种岛缘的浅滩上，中心刚露头、四周还泡在水里，
+    // 一棵松就直挺挺地长在海里了。周围一圈也得离得开水面。
     if (this.terrain.surfaceY(x, z) < WATER_Y + minY) return false;
+    for (let i = 0; i < 4; i++) {
+      const a2 = (i / 4) * Math.PI * 2 + 0.7;
+      if (this.terrain.surfaceY(x + Math.cos(a2) * 2.2, z + Math.sin(a2) * 2.2) < WATER_Y + minY * 0.55) return false;
+    }
     return true;
   }
 
@@ -348,7 +357,7 @@ export class Vegetation {
     // ---------- 阔叶大树
     if (F.broadleaf > 0) {
       const spots = this._scatter(F.broadleaf, rng, (x, y, z, slope) =>
-        slope < 0.85 && y < 46 && this._ok(x, z, { minPath: 5.5, pad: 4 }),
+        slope < 0.85 && y < 46 && this._ok(x, z, { minPath: 5.5, pad: 4, tall: true }),
         { rMin: 16, rMax: Math.min(165, FAR) });
       for (let v = 0; v < 3; v++) {
         const r2 = new Rng(1000 + v * 77);
@@ -365,7 +374,7 @@ export class Vegetation {
     // ---------- 中型树
     if (F.midTree > 0) {
       const spots = this._scatter(F.midTree, rng, (x, y, z, slope) =>
-        slope < 1.15 && y < 60 && this._ok(x, z, { minPath: 4.2, pad: 3 }),
+        slope < 1.15 && y < 60 && this._ok(x, z, { minPath: 4.2, pad: 3, tall: true }),
         { rMin: 22, rMax: Math.min(260, FAR) });
       for (let v = 0; v < 2; v++) {
         const r2 = new Rng(3000 + v * 31);
@@ -382,7 +391,7 @@ export class Vegetation {
     if (F.pine > 0) {
       const spots = this._scatter(F.pine, rng, (x, y, z, slope) =>
         (slope > 0.4 || y > T2.plazaY + 26) && y < 190 &&
-        this._ok(x, z, { minPath: 5, minRiver: 6, pad: 3, minY: 0.8 }),
+        this._ok(x, z, { minPath: 5, minRiver: 6, pad: 3, minY: 0.8, tall: true }),
         { rMin: 40, rMax: FAR });
       for (let v = 0; v < 2; v++) {
         const r2 = new Rng(5000 + v * 53);
@@ -398,7 +407,7 @@ export class Vegetation {
     if (F.bamboo > 0) {
       const spots = this._scatter(F.bamboo, rng, (x, y, z, slope, r) =>
         slope < 0.6 && r < 120 && y < T2.plazaY + 26 &&
-        distToRiver(x, z) < 34 && this._ok(x, z, { minPath: 5, minRiver: 6, pad: 4 }),
+        distToRiver(x, z) < 34 && this._ok(x, z, { minPath: 5, minRiver: 6, pad: 4, tall: true }),
         { rMin: 24, rMax: 120 });
       const r2 = new Rng(7777);
       const { poles, leaves } = bambooGeo(r2);
@@ -409,7 +418,7 @@ export class Vegetation {
     // ---------- 枯木
     if (F.deadwood > 0) {
       const spots = this._scatter(F.deadwood, rng, (x, y, z, slope) =>
-        slope < 1.2 && this._ok(x, z, { minPath: 4.5, minRiver: 5, pad: 3 }),
+        slope < 1.2 && this._ok(x, z, { minPath: 4.5, minRiver: 5, pad: 3, tall: true }),
         { rMin: 20, rMax: Math.min(230, FAR) });
       for (let v = 0; v < 2; v++) {
         const r2 = new Rng(6100 + v * 29);

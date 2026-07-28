@@ -6,6 +6,7 @@ import { gearGeo, ringGeo } from '../world/machinery.js';
 import { getMaterials } from '../world/materials.js';
 import { TOWER_BY_ID, TOWERS, ELEMENTS, RULES } from './config.js';
 import { GroundBlobs } from './beasts.js';
+import { LEVEL, distToRiver } from '../world/layout.js';
 
 function mergeList(list) {
   let count = 0, icount = 0;
@@ -33,11 +34,46 @@ function mergeList(list) {
 /* ============================================================
    造型
    ============================================================ */
+// 须弥座：圭角 + 下枭 + 束腰 + 上枭 + 压面石。
+// 所有机关共用这一副台基，八角、有束腰、四角还嵌着与本气同色的宝石，
+// 远看一眼就知道这是哪一门机关。
 function makeBase(M, r = 1.9, h = 0.5) {
   const parts = [];
-  const p1 = cyl(r, r * 1.12, h, 10, 0.6); T(p1, 0, h / 2, 0); parts.push(p1);
-  const p2 = cyl(r * 0.86, r * 0.9, h * 0.42, 10, 0.7); T(p2, 0, h + h * 0.2, 0); parts.push(p2);
+  // 圭角：八角落地的小方墩
+  for (let i = 0; i < 8; i++) {
+    const a = (i / 8) * Math.PI * 2 + Math.PI / 8;
+    parts.push(T(box(r * 0.40, h * 0.34, r * 0.40, 0.9),
+      Math.cos(a) * r * 0.90, h * 0.17, Math.sin(a) * r * 0.90, 0, -a, 0));
+  }
+  parts.push(T(cyl(r * 1.02, r * 1.06, h * 0.34, 8, 0.6), 0, h * 0.17, 0));      // 地栿
+  parts.push(T(frustum(r * 1.78, r * 1.78, r * 2.02, r * 2.02, h * 0.30, 0.45), 0, h * 0.49, 0)); // 下枭
+  parts.push(T(cyl(r * 0.80, r * 0.80, h * 0.46, 8, 0.7), 0, h * 0.87, 0));      // 束腰
+  parts.push(T(frustum(r * 1.94, r * 1.94, r * 1.66, r * 1.66, h * 0.30, 0.45), 0, h * 1.25, 0)); // 上枭
+  parts.push(T(box(r * 2.10, h * 0.20, r * 2.10, 0.55), 0, h * 1.50, 0, 0, Math.PI / 8, 0));      // 压面
+  // 束腰上的八根小柱，砖缝的层次靠它撑起来
+  for (let i = 0; i < 8; i++) {
+    const a = (i / 8) * Math.PI * 2;
+    parts.push(T(box(r * 0.13, h * 0.44, r * 0.13, 1.1),
+      Math.cos(a) * r * 0.82, h * 0.87, Math.sin(a) * r * 0.82, 0, -a, 0));
+  }
   return new THREE.Mesh(mergeList(parts), M.stoneCut);
+}
+
+// 每一门气的自发光材质，缓存在材质库里。
+// 缓存键必须带上强度 —— 同一门气的「眼睛」与「一渠水」亮度差着好几倍，
+// 只按元素缓存的话后来的那个会被前一个的强度吃掉。
+function elMat(M, el, strength = 1.2) {
+  const key = '_el_' + el + '_' + strength.toFixed(2);
+  if (!M[key]) {
+    const E = ELEMENTS[el] || ELEMENTS.none;
+    M[key] = new THREE.MeshStandardMaterial({
+      color: new THREE.Color(E.color).multiplyScalar(0.22),
+      emissive: new THREE.Color(E.glow),
+      emissiveIntensity: strength,
+      roughness: 0.34, metalness: 0.35,
+    });
+  }
+  return M[key];
 }
 
 function buildModel(id, level, M) {
@@ -48,13 +84,30 @@ function buildModel(id, level, M) {
   g.add(base);
 
   const turret = new THREE.Group();
-  turret.position.y = 0.68;
+  turret.position.y = 0.74;
   g.add(turret);
   const spins = [];
   let muzzle = new THREE.Vector3(0, 1.4, 1.2);
   const wood = [], metal = [], accent = [];
 
   const push = (arr, geo) => arr.push(geo);
+
+  // 台基四角的气石：本门机关的属性色，夜里看得见
+  const def = TOWER_BY_ID[id];
+  if (def && def.el && def.el !== 'none') {
+    const gem = new THREE.Mesh(new THREE.OctahedronGeometry(0.17, 0), elMat(M, def.el, 0.9));
+    gem.castShadow = false;
+    gem.position.set(0, -0.22, 1.62);
+    turret.add(gem);
+    spins.push({ o: gem, axis: 'y', sp: 1.1 });
+    for (const a of [Math.PI * 0.5, Math.PI, Math.PI * 1.5]) {
+      const m2 = new THREE.Mesh(new THREE.OctahedronGeometry(0.13, 0), elMat(M, def.el, 0.9));
+      m2.castShadow = false;
+      m2.position.set(Math.sin(a) * 1.62, -0.22, Math.cos(a) * 1.62);
+      turret.add(m2);
+      spins.push({ o: m2, axis: 'y', sp: -0.8 });
+    }
+  }
 
   if (id === 'crossbow') {
     // 转台
@@ -163,6 +216,274 @@ function buildModel(id, level, M) {
     turret.add(orb);
     g.userData.orb = orb;
     muzzle = new THREE.Vector3(0, 3.9 + lv * 0.5, 0);
+  } else if (id === 'gust') {
+    // 飓风橐 —— 橐龠鼓风。皮橐一鼓一收，风从铜龠里旋着吐出去
+    push(wood, T(cyl(0.80, 0.96, 0.42, 10, 0.7), 0, 0.21, 0));
+    for (const s of [-1, 1]) {
+      push(wood, T(box(0.22, 1.9, 0.22, 0.7), s * 0.86, 1.05, -0.35, 0.10, 0, 0));
+      push(wood, T(box(0.18, 0.18, 1.7, 0.8), s * 0.86, 1.95, 0.25));
+    }
+    // 皮橐：一阶一具，逐具后移，都在鼓动
+    const nBag = 1 + lv;
+    for (let i = 0; i < nBag; i++) {
+      const bag = new THREE.Mesh(box(1.28 - i * 0.10, 0.92 - i * 0.06, 1.35, 0.7), M.woodDark);
+      bag.castShadow = true;
+      bag.position.set(0, 1.16 + i * 0.02, -0.55 - i * 1.05);
+      turret.add(bag);
+      spins.push({ o: bag, axis: 'z', sp: 0, pump: 1.0, phase: i * 1.9 });
+      // 橐上的箍与拉杆
+      push(metal, T(torus(0.70 - i * 0.05, 0.045, 5, 12, 1.0), 0, 1.16, -0.55 - i * 1.05, Math.PI / 2, 0, 0));
+      push(wood, T(box(0.10, 0.10, 0.9, 0.9), 0, 1.72, -0.55 - i * 1.05, 0.3, 0, 0));
+    }
+    // 铜龠：束颈之后猛地张口
+    push(metal, T(cyl(0.34, 0.52, 1.25, 12, 0.8), 0, 1.16, 0.62, Math.PI / 2, 0, 0));
+    push(metal, T(cyl(0.72, 0.34, 0.85, 12, 0.8), 0, 1.16, 1.62, Math.PI / 2, 0, 0));
+    push(accent, T(torus(0.74, 0.075, 6, 16, 1.0), 0, 1.16, 1.98, Math.PI / 2, 0, 0));
+    // 龠口里的螺旋叶：风就是被它绞出来的
+    const vane = [];
+    const nv = 5 + lv;
+    for (let i = 0; i < nv; i++) {
+      const a = (i / nv) * Math.PI * 2;
+      const bl = box(0.60, 0.05, 0.34, 1.0);
+      T(bl, Math.cos(a) * 0.36, Math.sin(a) * 0.36, 0, 0, 0, a + 0.7);
+      vane.push(bl);
+    }
+    vane.push(T(cyl(0.10, 0.10, 0.42, 8, 1.0), 0, 0, 0, Math.PI / 2, 0, 0));
+    const vm = new THREE.Mesh(mergeList(vane), M.bronze);
+    vm.castShadow = false;
+    vm.position.set(0, 1.16, 1.72);
+    turret.add(vm);
+    spins.push({ o: vm, axis: 'z', sp: 7.5 + lv * 2.5 });
+    // 檐角的风幡：一眼看出是吃风的
+    for (const s of [-1, 1]) {
+      push(wood, T(cyl(0.055, 0.055, 1.1, 5, 1.2), s * 0.98, 2.35, 0.25));
+      push(accent, T(plane(0.34, 0.72, 1.2), s * 0.98, 2.62, 0.42, 0, s * 0.5, 0));
+    }
+    muzzle = new THREE.Vector3(0, 1.90, 2.1);
+  } else if (id === 'venom') {
+    // 百毒瓮 —— 三足石鼎里熬着瘴，长臂把封好的陶瓮甩出去
+    for (let i = 0; i < 3; i++) {
+      const a = (i / 3) * Math.PI * 2 + 0.5;
+      push(metal, T(cyl(0.14, 0.20, 1.05, 7, 0.7), Math.cos(a) * 0.86, 0.52, Math.sin(a) * 0.86, 0.10, 0, 0));
+      push(metal, T(box(0.26, 0.16, 0.34, 0.9), Math.cos(a) * 0.94, 0.06, Math.sin(a) * 0.94, 0, -a, 0));
+    }
+    push(metal, T(frustum(1.55, 1.55, 1.05, 1.05, 0.95 + lv * 0.08, 0.5), 0, 1.52, 0));
+    push(accent, T(torus(0.80, 0.085, 6, 16, 1.0), 0, 1.98, 0, Math.PI / 2, 0, 0));
+    for (const s of [-1, 1]) push(accent, T(torus(0.22, 0.05, 5, 10, 1.0), s * 0.82, 1.86, 0, 0, Math.PI / 2, 0));
+    // 鼎里那一汪绿
+    const brew = new THREE.Mesh(cyl(0.72, 0.72, 0.10, 14, 1.0), elMat(M, 'poison', 0.62));
+    brew.castShadow = false;
+    brew.position.y = 1.96;
+    turret.add(brew);
+    // 甩瓮的长臂
+    const arm = new THREE.Group();
+    arm.position.set(0, 1.55, -0.85);
+    const armGeo = [];
+    push(armGeo, T(box(0.17, 0.17, 2.5 + lv * 0.3, 0.8), 0, 0, 1.05));
+    push(armGeo, T(box(0.40, 0.40, 0.40, 1.0), 0, 0, -0.62));
+    const armMesh = new THREE.Mesh(mergeList(armGeo), M.woodDark);
+    armMesh.castShadow = true;
+    arm.add(armMesh);
+    const cradle = new THREE.Mesh(cyl(0.30, 0.24, 0.30, 8, 1.0), M.iron);
+    cradle.position.set(0, 0.16, 2.15 + lv * 0.3);
+    arm.add(cradle);
+    turret.add(arm);
+    g.userData.arm = arm;
+    for (const s of [-1, 1]) push(wood, T(box(0.18, 1.5, 0.18, 0.8), s * 0.62, 0.95, -0.85, -0.18, 0, 0));
+    // 备用的毒瓮，码在一旁
+    for (let i = 0; i <= lv + 1; i++) {
+      const a = 2.1 + i * 0.7;
+      const jx = Math.cos(a) * 1.35, jz = Math.sin(a) * 1.35;
+      push(wood, T(sphere(0.26, 8, 6, 1.0), jx, 0.28, jz));
+      push(wood, T(cyl(0.10, 0.15, 0.18, 6, 1.0), jx, 0.54, jz));
+      const cap = new THREE.Mesh(cyl(0.12, 0.12, 0.05, 6, 1.0), elMat(M, 'poison', 0.75));
+      cap.castShadow = false;
+      cap.position.set(jx, 0.64, jz);
+      turret.add(cap);
+    }
+    muzzle = new THREE.Vector3(0, 2.6, 1.2);
+  } else if (id === 'gu') {
+    // 万蛊坛 —— 铁箍缠身的大坛，坛口虚掩，幽紫的虫气从缝里溢出来
+    push(wood, T(cyl(1.05, 1.20, 0.32, 12, 0.7), 0, 0.16, 0));
+    const H = 1.65 + lv * 0.2;
+    push(wood, T(frustum(1.12, 1.12, 0.86, 0.86, H * 0.55, 0.45), 0, 0.32 + H * 0.275, 0));
+    push(wood, T(frustum(0.74, 0.74, 1.14, 1.14, H * 0.45, 0.45), 0, 0.32 + H * 0.775, 0));
+    for (let i = 0; i <= lv + 2; i++) {
+      const t = i / (lv + 2);
+      push(metal, T(torus(0.60 + Math.sin(t * Math.PI) * 0.44, 0.055, 5, 16, 1.0),
+        0, 0.42 + t * H * 0.94, 0, Math.PI / 2, 0, 0));
+    }
+    // 坛口：微微掀起的盖子与底下的光
+    const mouth = new THREE.Mesh(cyl(0.62, 0.62, 0.08, 14, 1.0), elMat(M, 'gu', 0.85));
+    mouth.castShadow = false;
+    mouth.position.y = 0.34 + H;
+    turret.add(mouth);
+    push(wood, T(cyl(0.70, 0.62, 0.16, 12, 0.9), 0.16, 0.34 + H + 0.26, 0.10, 0.20, 0, 0.14));
+    push(accent, T(sphere(0.11, 7, 6, 1.2), 0.16, 0.34 + H + 0.40, 0.10));
+    // 绕坛口盘旋的蛊虫
+    const swarm = new THREE.Group();
+    const bugs = [];
+    const nb = 7 + lv * 4;
+    for (let i = 0; i < nb; i++) {
+      const a = (i / nb) * Math.PI * 2 * 2.4;
+      const rr = 0.85 + (i % 3) * 0.22;
+      const b = box(0.13, 0.07, 0.20, 1.4);
+      T(b, Math.cos(a) * rr, ((i % 4) - 1.5) * 0.16, Math.sin(a) * rr, 0, -a, 0);
+      bugs.push(b);
+    }
+    const bugMesh = new THREE.Mesh(mergeList(bugs), elMat(M, 'gu', 0.55));
+    bugMesh.castShadow = false;
+    swarm.add(bugMesh);
+    swarm.position.y = 0.34 + H + 0.12;
+    turret.add(swarm);
+    spins.push({ o: swarm, axis: 'y', sp: 2.1 + lv * 0.6 });
+    // 陪坛
+    for (let i = 0; i <= lv; i++) {
+      const a = 2.4 + i * 1.5;
+      const px = Math.cos(a) * 1.45, pz = Math.sin(a) * 1.45;
+      push(wood, T(frustum(0.46, 0.46, 0.34, 0.34, 0.62, 0.6), px, 0.31, pz));
+      push(metal, T(torus(0.24, 0.035, 5, 10, 1.2), px, 0.44, pz, Math.PI / 2, 0, 0));
+      const lid = new THREE.Mesh(cyl(0.24, 0.24, 0.05, 8, 1.0), elMat(M, 'gu', 0.7));
+      lid.castShadow = false;
+      lid.position.set(px, 0.64, pz);
+      turret.add(lid);
+    }
+    muzzle = new THREE.Vector3(0, 0.34 + H + 0.2, 0.5);
+  } else if (id === 'shade') {
+    // 幽冥幡 —— 一杆玄幡，幡影所覆处天光尽敛
+    push(metal, T(frustum(1.15, 1.15, 1.45, 1.45, 0.36, 0.5), 0, 0.18, 0));
+    const PH = 4.0 + lv * 0.55;
+    push(wood, T(cyl(0.13, 0.19, PH, 9, 0.6), 0, 0.36 + PH / 2, 0));
+    // 横杆与幡首
+    push(wood, T(box(2.1 + lv * 0.35, 0.11, 0.11, 0.9), 0, 0.36 + PH * 0.92, 0));
+    push(accent, T(cone(0.15, 0.52, 6, 1.0), 0, 0.36 + PH + 0.30, 0));
+    for (const s of [-1, 1]) push(accent, T(sphere(0.09, 7, 6, 1.2), s * (1.05 + lv * 0.18), 0.36 + PH * 0.92, 0));
+    // 幡面：一阶一幅，长短错开
+    const nf = 1 + lv;
+    for (let i = 0; i < nf; i++) {
+      const px = nf === 1 ? 0 : (i / (nf - 1) - 0.5) * (1.7 + lv * 0.3);
+      const fh = 2.4 - Math.abs(px) * 0.35;
+      const cloth = new THREE.Mesh(plane(0.78, fh, 1.0), M.shadeCloth);
+      cloth.castShadow = false;
+      cloth.position.set(px, 0.36 + PH * 0.92 - fh / 2 - 0.12, 0.02);
+      turret.add(cloth);
+      spins.push({ o: cloth, axis: 'y', sp: 0, sway: 0.14, phase: i * 1.3 });
+      // 幡下的坠子
+      push(accent, T(sphere(0.07, 6, 5, 1.2), px, 0.36 + PH * 0.92 - fh - 0.22, 0.02));
+    }
+    // 幡心的幽珠与绕行的鬼火
+    const orb = new THREE.Mesh(new THREE.IcosahedronGeometry(0.30 + lv * 0.05, 1), elMat(M, 'dark', 1.1));
+    orb.position.y = 0.36 + PH * 0.62;
+    turret.add(orb);
+    g.userData.orb = orb;
+    for (let i = 0; i <= lv + 1; i++) {
+      const holder = new THREE.Group();
+      const fire = new THREE.Mesh(new THREE.IcosahedronGeometry(0.105, 0), elMat(M, 'dark', 1.5));
+      fire.castShadow = false;
+      fire.position.set(0.95 + i * 0.24, 0, 0);
+      holder.add(fire);
+      holder.position.y = 0.36 + PH * (0.40 + i * 0.14);
+      holder.rotation.z = i * 0.4;
+      turret.add(holder);
+      spins.push({ o: holder, axis: 'y', sp: (i % 2 ? -1 : 1) * (1.0 + i * 0.4) });
+    }
+    // 拉索
+    for (const s of [-1, 1]) {
+      push(metal, beam(s * 1.0, 0.40, 0, 0, 0.36 + PH * 0.55, 0, 0.035, 0.035, 1.4));
+      push(metal, T(cyl(0.10, 0.14, 0.26, 6, 1.0), s * 1.0, 0.40, 0));
+    }
+    muzzle = new THREE.Vector3(0, 0.36 + PH * 0.62, 0);
+  } else if (id === 'sumeru') {
+    // 须弥壶 —— 莲座托一只玉壶，壶口之上悬着一座小小的须弥山
+    for (let i = 0; i < 8; i++) {
+      const a = (i / 8) * Math.PI * 2;
+      push(accent, T(cone(0.30, 0.52, 5, 1.0), Math.cos(a) * 0.82, 0.26, Math.sin(a) * 0.82, 0.9, -a, 0));
+    }
+    push(metal, T(cyl(0.86, 1.00, 0.30, 12, 0.7), 0, 0.15, 0));
+    // 壶：下腹大、上腹小、束颈
+    push(metal, T(sphere(0.86, 14, 10, 0.8), 0, 1.15, 0, 0, 0, 0, 1, 0.86, 1));
+    push(metal, T(sphere(0.56, 12, 9, 0.8), 0, 1.92, 0, 0, 0, 0, 1, 0.82, 1));
+    push(metal, T(cyl(0.26, 0.34, 0.34, 10, 0.9), 0, 1.62, 0));
+    push(accent, T(torus(0.40, 0.06, 6, 14, 1.0), 0, 1.62, 0, Math.PI / 2, 0, 0));
+    push(metal, T(cyl(0.40, 0.30, 0.26, 10, 0.9), 0, 2.32, 0));
+    push(accent, T(torus(0.42, 0.055, 6, 16, 1.0), 0, 2.44, 0, Math.PI / 2, 0, 0));
+    // 壶口的虚空：一片吞光的黑
+    const maw = new THREE.Mesh(cyl(0.33, 0.33, 0.04, 14, 1.0),
+      new THREE.MeshBasicMaterial({ color: 0x0a0714 }));
+    maw.castShadow = false;
+    maw.position.y = 2.47;
+    turret.add(maw);
+    // 悬在壶口上的须弥山：上宽下窄的倒锥台，正是经里说的样子
+    const peak = new THREE.Group();
+    const pk = [];
+    push(pk, T(frustum(0.70, 0.70, 0.26, 0.26, 0.62, 0.6), 0, 0.31, 0));
+    push(pk, T(frustum(0.44, 0.44, 0.74, 0.74, 0.34, 0.6), 0, 0.79, 0));
+    push(pk, T(cone(0.30, 0.44, 6, 0.8), 0, 1.16, 0));
+    const pkMesh = new THREE.Mesh(mergeList(pk), elMat(M, 'void', 0.55));
+    pkMesh.castShadow = false;
+    peak.add(pkMesh);
+    peak.position.y = 2.92 + lv * 0.12;
+    turret.add(peak);
+    spins.push({ o: peak, axis: 'y', sp: 0.55 });
+    // 环壶而转的玉璧，一阶一重
+    for (let i = 0; i <= lv; i++) {
+      const holder = new THREE.Group();
+      const rg = new THREE.Mesh(new THREE.TorusGeometry(1.15 + i * 0.34, 0.055, 7, 30), M.gold);
+      rg.castShadow = false;
+      holder.add(rg);
+      holder.position.y = 2.0 + i * 0.42;
+      holder.rotation.set(1.2 - i * 0.35, 0, i * 0.5);
+      turret.add(holder);
+      spins.push({ o: holder, axis: i % 2 ? 'x' : 'y', sp: (i % 2 ? -1 : 1) * (0.6 + i * 0.45) });
+    }
+    muzzle = new THREE.Vector3(0, 2.5, 0);
+  } else if (id === 'torrent') {
+    // 蛟龙渠 —— 石渠架在木撑上，渠首一颗蛟首，水从它口里射出去
+    push(wood, T(box(1.9, 0.30, 3.2, 0.5), 0, 0.15, -0.2));
+    for (const s of [-1, 1]) {
+      push(wood, T(box(0.20, 1.25, 0.20, 0.7), s * 0.72, 0.78, -1.05, -0.16, 0, 0));
+      push(wood, T(box(0.16, 0.16, 1.6, 0.8), s * 0.72, 1.30, 0.10, 0.18, 0, 0));
+    }
+    // 石渠：一道上翘的槽
+    push(metal, T(box(1.05, 0.20, 3.0, 0.5), 0, 1.32, 0.35, 0.16, 0, 0));
+    for (const s of [-1, 1]) push(metal, T(box(0.14, 0.42, 3.0, 0.6), s * 0.52, 1.46, 0.35, 0.16, 0, 0));
+    // 渠里的水
+    const flow = new THREE.Mesh(box(0.86, 0.07, 2.7, 0.6), elMat(M, 'water', 0.5));
+    flow.castShadow = false;
+    flow.position.set(0, 1.45, 0.35);
+    flow.rotation.x = 0.16;
+    turret.add(flow);
+    // 蛟首：额、吻、下颌、角、须
+    const nHead = 1 + lv;
+    for (let i = 0; i < nHead; i++) {
+      const hx = nHead === 1 ? 0 : (i / (nHead - 1) - 0.5) * 0.92;
+      const hy = 1.72 - Math.abs(hx) * 0.16;
+      const hz = 1.72 - Math.abs(hx) * 0.22;
+      push(accent, T(box(0.46, 0.40, 0.62, 0.9), hx, hy, hz, -0.14, 0, 0));
+      push(accent, T(frustum(0.30, 0.26, 0.42, 0.36, 0.52, 0.8), hx, hy - 0.06, hz + 0.52, Math.PI / 2 - 0.14, 0, 0));
+      push(accent, T(box(0.34, 0.14, 0.42, 0.9), hx, hy - 0.22, hz + 0.44, -0.30, 0, 0));   // 下颌
+      for (const s of [-1, 1]) {
+        push(accent, T(cone(0.06, 0.40, 5, 1.0), hx + s * 0.17, hy + 0.32, hz - 0.10, -0.5, 0, s * 0.35));  // 角
+        push(metal, T(cyl(0.022, 0.022, 0.72, 4, 1.4), hx + s * 0.22, hy - 0.02, hz + 0.62, 0.5, s * 0.6, 0)); // 须
+        const eye = new THREE.Mesh(new THREE.OctahedronGeometry(0.062, 0), elMat(M, 'water', 1.6));
+        eye.castShadow = false;
+        eye.position.set(hx + s * 0.20, hy + 0.12, hz + 0.24);
+        turret.add(eye);
+      }
+      const jaw = new THREE.Mesh(cyl(0.15, 0.15, 0.05, 8, 1.0), elMat(M, 'water', 1.6));
+      jaw.castShadow = false;
+      jaw.position.set(hx, hy - 0.08, hz + 0.78);
+      jaw.rotation.x = Math.PI / 2;
+      turret.add(jaw);
+    }
+    // 闸轮：开合水量的那副绞盘
+    const valve = new THREE.Mesh(gearGeo(0.46, 10, 0.14), M.bronze);
+    valve.castShadow = false;
+    valve.position.set(0.84, 1.18, -0.95);
+    turret.add(valve);
+    spins.push({ o: valve, axis: 'z', sp: -1.9 });
+    push(metal, T(cyl(0.07, 0.07, 1.0, 6, 1.0), 0.84, 1.18, -0.95, 0, 0, Math.PI / 2));
+    muzzle = new THREE.Vector3(0, 1.66, 2.6);
   } else if (id === 'wheel') {
     push(wood, T(box(2.2, 0.5, 1.4, 0.6), 0, 0.25, 0));
     for (const s of [-1, 1]) push(wood, T(box(0.22, 2.0, 0.22, 0.7), s * 0.9, 1.2, 0, 0, 0, s * 0.12));
@@ -340,6 +661,9 @@ function buildModel(id, level, M) {
   return g;
 }
 
+// 这几门机关是就地发作的领域，不用转向瞄人
+const NO_AIM = { ring: 1, field: 1, curse: 1, warp: 1 };
+
 /* ============================================================
    机关实体
    ============================================================ */
@@ -358,6 +682,8 @@ export class Tower {
     this.charge = 0;
     this.powered = false;
     this.disabled = 0;
+    this.hobble = 0;      // 疫：射速大减
+    this.blind = 0;       // 幽：射程缩水
     this.kills = 0;
     this.damageDone = 0;
     this.buildAnim = 0;
@@ -371,7 +697,10 @@ export class Tower {
   }
 
   get stats() { return this.def.up[this.level]; }
-  get range() { return this.stats.range !== undefined ? this.stats.range : this.def.range; }
+  get range() {
+    const r = this.stats.range !== undefined ? this.stats.range : this.def.range;
+    return this.blind > 0 ? r * 0.62 : r;      // 罔象一来，机关就看不远了
+  }
   get power() { return this.stats.power !== undefined ? this.stats.power : this.def.power; }
   get link() { return this.stats.link !== undefined ? this.stats.link : (this.def.link || 0); }
   get isGen() { return this.def.kind === 'gen'; }
@@ -552,6 +881,11 @@ export class TowerManager {
       color: 0x2a2a3a, emissive: new THREE.Color(0xaad4ff), emissiveIntensity: 2.6,
       roughness: 0.2, metalness: 0.6,
     });
+    // 幽冥幡的幡面：正反都要看得见，压得极暗
+    this.M.shadeCloth = new THREE.MeshStandardMaterial({
+      color: 0x16101f, emissive: new THREE.Color(0x5a48a0), emissiveIntensity: 0.55,
+      roughness: 0.92, metalness: 0.0, side: THREE.DoubleSide,
+    });
     this.towers = [];
     this.links = new PowerLinks(scene);
     this.blobs = new GroundBlobs(scene, 140);
@@ -649,6 +983,8 @@ export class TowerManager {
     const surge = this.game.surge > 0 ? 0.7 : 0;
     const rateMult = eff * (1 + nightBonus + surge);
 
+    const lavaRule = LEVEL && LEVEL.rule && LEVEL.rule.id === 'lava' ? LEVEL.rule : null;
+
     this.blobs.begin();
     for (const tw of this.towers) {
       tw.buildAnim = Math.min(1, tw.buildAnim + dt * 3.2);
@@ -658,16 +994,26 @@ export class TowerManager {
       this.blobs.add(tw.x, tw.y, tw.z, 2.5 * s, 0.40 * s);
 
       if (tw.disabled > 0) { tw.disabled -= dt; }
+      if (tw.hobble > 0) tw.hobble -= dt;
+      if (tw.blind > 0) tw.blind -= dt;
       const active = tw.powered && tw.disabled <= 0;
 
       // 转动件
       const spinRate = (tw.isGen ? 1 : (active ? rateMult : 0.05)) * (tw.isGen ? 1 : 1);
       for (const sp of tw.model.userData.spins) {
         if (sp.pump !== undefined) {
-          // 风箱：往复鼓动，不是转
-          sp.phase = (sp.phase || 0) + dt * 2.6;
+          // 风箱／皮橐：往复鼓动，不是转
+          sp.phase = (sp.phase || 0) + dt * 2.6 * (tw.isGen ? 1 : Math.max(0.15, spinRate));
           sp.o.scale.z = 1 + Math.sin(sp.phase) * 0.22 * sp.pump;
-          sp.o.position.z = Math.sin(sp.phase) * 0.16 * sp.pump;
+          sp.o.position.z = (sp.z0 === undefined ? (sp.z0 = sp.o.position.z) : sp.z0)
+            + Math.sin(sp.phase) * 0.16 * sp.pump;
+          continue;
+        }
+        if (sp.sway !== undefined) {
+          // 幡面：随风摆，不是转
+          sp.phase = (sp.phase || 0) + dt * 1.5;
+          sp.o.rotation.z = Math.sin(sp.phase) * sp.sway;
+          sp.o.rotation.x = Math.cos(sp.phase * 0.7) * sp.sway * 0.5;
           continue;
         }
         sp.o.rotation[sp.axis] += sp.sp * dt * (tw.isGen ? 1 : Math.max(0.08, spinRate));
@@ -688,36 +1034,35 @@ export class TowerManager {
       }
 
       const st = tw.stats;
-      const rate = (st.rate !== undefined ? st.rate : tw.def.rate) * rateMult;
+      // 蜚过之后，机关像害了病，转得慢一半
+      let rate = (st.rate !== undefined ? st.rate : tw.def.rate) * rateMult * (tw.hobble > 0 ? 0.5 : 1);
+      // 炎火之山：贴着熔岩沟的机关借地火之势，转得更快
+      if (lavaRule) {
+        if (tw._lava === undefined) tw._lava = distToRiver(tw.x, tw.z) < lavaRule.nearRiver;
+        if (tw._lava) rate *= (1 + lavaRule.fireBonus);
+      }
       tw.cool -= dt;
 
       // 瞄准
       const range = tw.range;
-      let target = null;
-      if (tw.def.kind === 'ring' || tw.def.kind === 'field') {
-        target = enemies.nearestAhead(tw.x, tw.z, range);
-      } else {
-        target = enemies.nearestAhead(tw.x, tw.z, range);
-      }
-      if (target) {
+      const target = enemies.nearestAhead(tw.x, tw.z, range);
+      if (target && !NO_AIM[tw.def.kind]) {
         const want = Math.atan2(target.x - tw.x, target.z - tw.z);
         let d = want - tw.angle;
         while (d > Math.PI) d -= Math.PI * 2;
         while (d < -Math.PI) d += Math.PI * 2;
         tw.angle += clamp(d, -dt * 5.2, dt * 5.2);
-        if (tw.def.kind !== 'ring' && tw.def.kind !== 'field') {
-          tw.model.rotation.y = tw.angle;
-        }
+        tw.model.rotation.y = tw.angle;
       }
       const turret = tw.model.userData.turret;
       if (turret) turret.position.z = -tw.recoil * 0.35;
 
-      if (tw.cool <= 0 && (target || tw.def.kind === 'ring' || tw.def.kind === 'field')) {
+      if (tw.cool <= 0 && (target || NO_AIM[tw.def.kind])) {
         const fired = this.game.fire(tw, target, enemies);
         if (fired) {
           tw.cool = 1 / Math.max(0.05, rate);
           tw.recoil = 1;
-          if (tw.def.kind === 'splash') tw.armAnim = 1;
+          if (tw.def.kind === 'splash' || tw.def.kind === 'venom') tw.armAnim = 1;
         } else {
           tw.cool = 0.12;
         }
