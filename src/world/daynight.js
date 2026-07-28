@@ -178,9 +178,12 @@ function lerpKey(a, b, t) {
 }
 
 export class DayNight {
-  constructor(engine, sky) {
+  constructor(engine, sky, climate = null) {
     this.engine = engine;
     this.sky = sky;
+    // 一关一套气候色偏：雾的浓淡与色相、天穹与日光的染色、云量、曝光
+    this.climate = climate || {};
+    this._c = new THREE.Color();
     this.hour = 8.6;
     this.targetHour = 8.6;
     this.transition = 0;      // >0 表示正在过渡
@@ -238,6 +241,7 @@ export class DayNight {
 
   apply(hour, instant = false) {
     const s = this.sample(hour);
+    this._applyClimate(s);
     this.state = s;
     const e = this.engine, u = this.sky.u;
 
@@ -310,6 +314,26 @@ export class DayNight {
     g.uGain.value.setRGB(s.gain[0], s.gain[1], s.gain[2]);
 
     this.lanternLevel = s.lantern;
+  }
+
+  // 把当关的气候色偏叠到这一时刻的关键帧上
+  _applyClimate(s) {
+    const c = this.climate;
+    if (!c) return;
+    if (c.fogMul) s.fogD *= c.fogMul;
+    if (c.fogTint) s.fog.lerp(this._c.set(c.fogTint), 0.42);
+    if (c.skyTint) {
+      const t = this._c.set(c.skyTint);
+      s.zen.lerp(t, 0.24);
+      s.hor.lerp(t, 0.40);
+      s.cloudLit.lerp(t, 0.30);
+    }
+    if (c.sunTint) {
+      const t = this._c.set(c.sunTint);
+      s.sun.lerp(t, 0.30);
+    }
+    if (c.cloudCover) s.cover = clamp(s.cover + c.cloudCover, 0, 0.92);
+    if (c.exposure) s.exposure *= c.exposure;
   }
 
   _updateSunScreen(camera) {

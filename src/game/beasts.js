@@ -498,6 +498,395 @@ const SHAPES = {
       B.push(wh, a, 0.42, [0.3, s * 2, 0, 0]);
     }
   },
+
+  /* ============================================================
+     二 · 炎火之山
+     ============================================================ */
+  // 狰：状如赤豹，五尾一角
+  zheng(B, c, a) {
+    addSpine(B, c, { len: 2.8, r: 0.52, segs: 6, y: 1.0, taper: 0.48, wave: 0.06 });
+    for (const [x, z, ph] of [[-0.42, 0.92, 0], [0.42, 0.92, 3.1], [-0.42, -0.82, 3.1], [0.42, -0.82, 0]])
+      addLeg(B, c, x, z, { h: 1.0, r: 0.14, phase: ph, y: 1.0, swing: 0.22 });
+    addHead(B, c, a, { y: 1.30, z: 1.52, r: 0.40, eyeColor: [1.0, 0.55, 0.15] });
+    addEars(B, c, { y: 1.56, z: 1.38, r: 0.12, spread: 0.24, len: 0.34, tilt: 0.20 });
+    // 独角：额心一支，向前斜挑
+    const hn = cone(0.13, 1.05, 6, 0.8);
+    T(hn, 0, 1.72, 1.62, -0.62, 0, 0);
+    B.push(hn, a, 0.28, [0.05, 0, 0, 0]);
+    addRidge(B, a, { from: 1.3, to: -1.3, y: 1.42, h: 0.26, n: 8, emis: 0.26 });
+    // 五尾
+    for (let i = 0; i < 5; i++)
+      addTail(B, a, {
+        len: 1.9, r: 0.10, y: 1.10, z: -1.30, ang: (i - 2) * 0.34,
+        phase: i * 1.3, emis: 0.34, curve: 0.42, segs: 5,
+      });
+  },
+  // 鬿雀：状如鸡而白首，鼠足而虎爪
+  qique(B, c, a) {
+    addSpine(B, c, { len: 1.8, r: 0.44, segs: 4, y: 1.5, taper: 0.52, wave: 0.05 });
+    addWing(B, c, -1, { span: 2.6, chord: 1.15, y: 1.66, z: 0.0, flap: 0.72, emis: 0.16 });
+    addWing(B, c, 1, { span: 2.6, chord: 1.15, y: 1.66, z: 0.0, flap: 0.72, emis: 0.16 });
+    const nk = cyl(0.12, 0.18, 0.8, 6, 0.8);
+    T(nk, 0, 1.88, 0.76, 0.8, 0, 0);
+    B.push(nk, c, 0, [0.06, 0, 0, 0]);
+    // 白首
+    addHead(B, [0.94, 0.92, 0.88], a, { y: 2.10, z: 1.16, r: 0.28, jaw: false, eyeColor: [1, 0.4, 0.2] });
+    const beak = cone(0.11, 0.46, 6, 0.9);
+    T(beak, 0, 2.06, 1.46, Math.PI / 2, 0, 0);
+    B.push(beak, a, 0.20, [0.06, 0, 0, 0]);
+    // 鸡冠
+    for (let i = 0; i < 3; i++) {
+      const g = cone(0.07, 0.24 - i * 0.04, 5, 1.0);
+      T(g, 0, 2.34, 1.20 - i * 0.16);
+      B.push(g, [0.86, 0.20, 0.14], 0.22, [0.06, 0, 0, 0]);
+    }
+    // 鼠足虎爪
+    for (const [x, ph] of [[-0.24, 0], [0.24, 3.1]])
+      addLeg(B, a, x, -0.05, { h: 1.28, r: 0.10, phase: ph, y: 1.42, swing: 0.14 });
+    for (let i = 0; i < 3; i++)
+      addTail(B, c, { len: 1.2, r: 0.08, y: 1.48, z: -0.92, ang: (i - 1) * 0.30, phase: i * 1.2, emis: 0.18, curve: 0.16 });
+  },
+  // 火鼠：生于火中，其毛可织
+  huoshu(B, c, a) {
+    addSpine(B, c, { len: 1.7, r: 0.34, segs: 5, y: 0.68, taper: 0.52, wave: 0.07 });
+    for (const [x, z, ph] of [[-0.26, 0.56, 0], [0.26, 0.56, 3.1], [-0.26, -0.48, 3.1], [0.26, -0.48, 0]])
+      addLeg(B, c, x, z, { h: 0.68, r: 0.085, phase: ph, y: 0.68, swing: 0.26 });
+    addHead(B, c, a, { y: 0.86, z: 1.02, r: 0.27, eyeColor: [1.0, 0.75, 0.2] });
+    addEars(B, c, { y: 1.08, z: 0.90, r: 0.13, spread: 0.17, len: 0.30, tilt: 0.10 });
+    // 燃着的背毛
+    addRidge(B, a, { from: 0.8, to: -0.8, y: 0.92, h: 0.22, n: 7, emis: 0.55 });
+    addTail(B, a, { len: 1.5, r: 0.07, y: 0.72, z: -0.86, segs: 5, curve: 0.30, emis: 0.42 });
+  },
+  // 朱厌：状如猿，白首赤足
+  zhuyan(B, c, a) {
+    addSpine(B, c, { len: 2.4, r: 0.92, segs: 5, y: 2.30, taper: 0.72, wave: 0.04, rise: 0.2 });
+    // 后腿短、前臂长，猿的比例
+    for (const [x, ph] of [[-0.68, 0], [0.68, 3.1]])
+      addLeg(B, a, x, -0.42, { h: 1.55, r: 0.26, phase: ph, y: 2.10, swing: 0.16 });
+    for (const s of [-1, 1]) {
+      // 长臂：肩 -> 肘 -> 拳，垂到地面
+      B.push(beam(s * 0.86, 2.85, 0.30, s * 1.30, 1.70, 0.55, 0.24, 0.24, 0.7), c, 0, [0.20, s > 0 ? 0 : 3.1, 0, 0]);
+      B.push(beam(s * 1.30, 1.70, 0.55, s * 1.42, 0.55, 0.85, 0.20, 0.20, 0.7), c, 0, [0.30, s > 0 ? 0 : 3.1, 0, 0]);
+      B.push(T(ellip(0.34, 0.30, 0.36, 10), s * 1.44, 0.36, 0.92), c, 0, [0.34, s > 0 ? 0 : 3.1, 0, 0]);
+    }
+    // 白首
+    addHead(B, [0.93, 0.91, 0.86], a, { y: 3.10, z: 1.10, r: 0.62, horn: 0, eyeColor: [1.0, 0.22, 0.12] });
+    addEars(B, [0.93, 0.91, 0.86], { y: 3.24, z: 0.72, r: 0.20, spread: 0.58, len: 0.30, tilt: 0.0 });
+    addRidge(B, a, { from: 1.2, to: -1.2, y: 2.90, h: 0.24, n: 6, emis: 0.18 });
+  },
+
+  /* ============================================================
+     三 · 幽都寒渊
+     ============================================================ */
+  // 诸犍：豹身人首，牛耳一目，行则衔其尾
+  zhujian(B, c, a) {
+    addSpine(B, c, { len: 3.0, r: 0.56, segs: 6, y: 1.14, taper: 0.46, wave: 0.05 });
+    for (const [x, z, ph] of [[-0.44, 1.0, 0], [0.44, 1.0, 3.1], [-0.44, -0.9, 3.1], [0.44, -0.9, 0]])
+      addLeg(B, c, x, z, { h: 1.14, r: 0.16, phase: ph, y: 1.14, swing: 0.20 });
+    // 人面：扁平的脸盘，独目
+    const f = ellip(0.40, 0.48, 0.30, 10);
+    T(f, 0, 1.72, 1.58);
+    B.push(f, a, 0.04, [0.05, 0, 0, 0]);
+    const eye = ellip(0.15, 0.13, 0.08, 9);
+    T(eye, 0, 1.80, 1.84);
+    B.push(eye, [0.7, 0.95, 1.0], 1.0, [0.05, 0, 0, 0]);
+    // 牛耳
+    for (const s of [-1, 1]) {
+      const e = ellip(0.10, 0.24, 0.06, 8);
+      T(e, s * 0.44, 1.82, 1.42, 0, 0, s * 0.7);
+      B.push(e, c, 0, [0.05, 0, 0, 0]);
+    }
+    addRidge(B, a, { from: 1.4, to: -1.4, y: 1.58, h: 0.24, n: 8, emis: 0.16 });
+    // 长尾：绕回身侧，像衔在口中
+    addTail(B, c, { len: 3.0, r: 0.15, y: 1.18, z: -1.5, segs: 7, curve: 0.50, ang: 0.35, emis: 0.10 });
+  },
+  // 狡：状如犬而豹文，其角如牛
+  jiao(B, c, a) {
+    addSpine(B, c, { len: 2.2, r: 0.40, segs: 5, y: 0.92, taper: 0.52, wave: 0.06 });
+    for (const [x, z, ph] of [[-0.32, 0.74, 0], [0.32, 0.74, 3.1], [-0.32, -0.64, 3.1], [0.32, -0.64, 0]])
+      addLeg(B, c, x, z, { h: 0.92, r: 0.11, phase: ph, y: 0.92, swing: 0.24 });
+    addHead(B, c, a, { y: 1.16, z: 1.30, r: 0.32, eyeColor: [0.85, 1.0, 0.6] });
+    addEars(B, c, { y: 1.40, z: 1.18, r: 0.11, spread: 0.19, len: 0.32, tilt: 0.26 });
+    // 牛角：向两侧弯出去
+    for (const s of [-1, 1]) {
+      const hn = cone(0.10, 0.72, 6, 0.8);
+      T(hn, s * 0.28, 1.42, 1.08, -0.30, 0, s * 1.05);
+      B.push(hn, a, 0.16, [0.05, 0, 0, 0]);
+    }
+    addTail(B, c, { len: 1.5, r: 0.10, y: 1.00, z: -1.0, curve: 0.48, segs: 4 });
+  },
+  // 寒鸮：玄羽白瞳，翼过处泉眼尽冻
+  hanba(B, c, a) {
+    addSpine(B, c, { len: 1.6, r: 0.46, segs: 4, y: 1.5, taper: 0.58, wave: 0.04 });
+    addWing(B, a, -1, { span: 2.8, chord: 1.25, y: 1.62, z: 0.05, flap: 0.62, emis: 0.24 });
+    addWing(B, a, 1, { span: 2.8, chord: 1.25, y: 1.62, z: 0.05, flap: 0.62, emis: 0.24 });
+    // 鸮首：又圆又扁，面盘明显
+    const h = ellip(0.42, 0.40, 0.34, 11);
+    T(h, 0, 1.90, 0.86);
+    B.push(h, c, 0, [0.05, 0, 0, 0]);
+    for (const ex of [-0.17, 0.17]) {
+      B.push(T(ellip(0.16, 0.16, 0.06, 9), ex, 1.94, 1.14), [0.92, 0.98, 1.0], 0.35, [0.05, 0, 0, 0]);
+      B.push(T(ellip(0.075, 0.075, 0.05, 8), ex, 1.94, 1.19), [0.05, 0.06, 0.09], 0.0, [0.05, 0, 0, 0]);
+    }
+    const beak = cone(0.08, 0.28, 5, 0.9);
+    T(beak, 0, 1.82, 1.20, Math.PI / 2.1, 0, 0);
+    B.push(beak, a, 0.18, [0.05, 0, 0, 0]);
+    // 角羽
+    for (const s of [-1, 1]) {
+      const g = cone(0.08, 0.34, 5, 1.0);
+      T(g, s * 0.26, 2.22, 0.80, -0.2, 0, s * 0.42);
+      B.push(g, c, 0.05, [0.05, 0, 0, 0]);
+    }
+    for (const [x, ph] of [[-0.20, 0], [0.20, 3.1]])
+      addLeg(B, a, x, -0.05, { h: 0.86, r: 0.085, phase: ph, y: 1.36, swing: 0.10 });
+    for (let i = 0; i < 3; i++)
+      addTail(B, c, { len: 1.1, r: 0.09, y: 1.44, z: -0.82, ang: (i - 1) * 0.24, phase: i * 1.1, emis: 0.14, curve: 0.06 });
+  },
+  // 強良：衔蛇操蛇，虎首人身
+  qiangliang(B, c, a) {
+    // 人身：直立的躯干
+    addSpine(B, c, { len: 2.2, r: 0.86, segs: 5, y: 2.60, taper: 0.66, wave: 0.05, rise: 0.15 });
+    for (const [x, ph] of [[-0.62, 0], [0.62, 3.1]])
+      addLeg(B, c, x, -0.10, { h: 2.30, r: 0.30, phase: ph, y: 2.40, swing: 0.18 });
+    // 虎首
+    addHead(B, c, a, { y: 3.44, z: 0.98, r: 0.70, horn: 0, eyeColor: [0.6, 0.95, 1.0] });
+    addEars(B, c, { y: 3.76, z: 0.72, r: 0.17, spread: 0.42, len: 0.36, tilt: 0.10 });
+    for (let i = 0; i < 6; i++) {
+      const tth = cone(0.07, 0.26, 5, 1.0);
+      T(tth, (i - 2.5) * 0.16, 3.20, 1.60, Math.PI, 0, 0);
+      B.push(tth, [0.96, 0.94, 0.88], 0.12, [0.05, 0, 0, 0]);
+    }
+    // 双臂各操一蛇
+    for (const s of [-1, 1]) {
+      B.push(beam(s * 0.80, 3.10, 0.20, s * 1.55, 2.40, 0.70, 0.22, 0.22, 0.7), c, 0, [0.22, s > 0 ? 0 : 3.1, 0, 0]);
+      // 蛇：一节节盘在手上
+      for (let i = 0; i < 6; i++) {
+        const t = i / 5;
+        const rr = 0.16 * (1 - t * 0.5);
+        B.push(T(ellip(rr, rr, rr * 1.5, 8),
+          s * (1.62 + Math.sin(t * 4.2) * 0.42), 2.34 - t * 0.20, 0.80 + t * 1.05),
+          a, 0.34, [0.36 + t * 0.3, s * 2 + t * 3, 0, 0]);
+      }
+    }
+    // 雷纹
+    for (let i = 0; i < 7; i++) {
+      const g = box(0.11, 0.44, 0.11, 1.0);
+      T(g, Math.sin(i * 2.1) * 0.62, 3.0 + Math.sin(i * 1.3) * 0.5, 0.9 - i * 0.34, 0, 0, Math.sin(i) * 0.9);
+      B.push(g, [0.62, 0.92, 1.0], 0.60, [0.12, i * 0.8, 0, 0]);
+    }
+  },
+
+  /* ============================================================
+     四 · 归墟海眼
+     ============================================================ */
+  // 陵鱼：人面手足鱼身
+  lingyu(B, c, a) {
+    addSpine(B, c, { len: 2.8, r: 0.50, segs: 7, y: 1.06, taper: 0.28, wave: 0.16 });
+    // 人面
+    const f = ellip(0.34, 0.42, 0.26, 10);
+    T(f, 0, 1.44, 1.44);
+    B.push(f, a, 0.06, [0.06, 0, 0, 0]);
+    for (const ex of [-0.13, 0.13]) {
+      B.push(T(ellip(0.07, 0.055, 0.05, 7), ex, 1.52, 1.66), [0.2, 1.0, 0.95], 1.0, [0.06, 0, 0, 0]);
+    }
+    // 手足
+    for (const s of [-1, 1]) {
+      B.push(beam(s * 0.34, 1.20, 0.72, s * 0.86, 0.86, 0.98, 0.10, 0.10, 0.8), c, 0, [0.26, s > 0 ? 0 : 3.1, 0, 0]);
+      B.push(T(ellip(0.16, 0.09, 0.20, 8), s * 0.92, 0.78, 1.06), a, 0.10, [0.28, s > 0 ? 0 : 3.1, 0, 0]);
+      addLeg(B, c, s * 0.28, -0.30, { h: 0.68, r: 0.085, phase: s > 0 ? 0 : 3.1, y: 0.98, swing: 0.22, claw: false });
+    }
+    // 背鳍与尾鳍
+    addRidge(B, a, { from: 1.1, to: -1.2, y: 1.42, h: 0.30, n: 7, emis: 0.24 });
+    const tf = box(0.06, 1.15, 0.95, 0.8);
+    T(tf, 0, 1.14, -1.62);
+    B.push(tf, a, 0.22, [0.36, 2.2, 0, 0]);
+  },
+  // 奢比尸：兽身人面大耳，珥两青蛇
+  shebishi(B, c, a) {
+    addSpine(B, c, { len: 3.2, r: 0.74, segs: 6, y: 1.42, taper: 0.56, wave: 0.05 });
+    for (const [x, z, ph] of [[-0.60, 1.05, 0], [0.60, 1.05, 3.1], [-0.60, -0.95, 3.1], [0.60, -0.95, 0]])
+      addLeg(B, c, x, z, { h: 1.42, r: 0.21, phase: ph, y: 1.42, swing: 0.18 });
+    // 人面
+    const f = ellip(0.52, 0.62, 0.36, 11);
+    T(f, 0, 1.96, 1.78);
+    B.push(f, a, 0.05, [0.05, 0, 0, 0]);
+    for (const ex of [-0.19, 0.19]) {
+      B.push(T(ellip(0.10, 0.08, 0.06, 8), ex, 2.06, 2.10), [1.0, 0.86, 0.35], 1.0, [0.05, 0, 0, 0]);
+    }
+    // 大耳
+    for (const s of [-1, 1]) {
+      const e = ellip(0.10, 0.40, 0.28, 9);
+      T(e, s * 0.60, 2.06, 1.62, 0, s * 0.4, s * 0.30);
+      B.push(e, c, 0, [0.05, 0, 0, 0]);
+      // 耳上悬的青蛇
+      for (let i = 0; i < 5; i++) {
+        const t = i / 4;
+        B.push(T(ellip(0.09 * (1 - t * 0.5), 0.09 * (1 - t * 0.5), 0.16, 7),
+          s * (0.70 + Math.sin(t * 3.4) * 0.20), 1.86 - t * 0.72, 1.62 + Math.cos(t * 2.6) * 0.18),
+          [0.30, 0.86, 0.52], 0.30, [0.30 + t * 0.4, s * 2 + t * 3.2, 0, 0]);
+      }
+    }
+    addRidge(B, a, { from: 1.5, to: -1.5, y: 1.90, h: 0.22, n: 8, emis: 0.14 });
+    addTail(B, c, { len: 1.8, r: 0.18, y: 1.44, z: -1.7, curve: 0.18 });
+  },
+  // 鱄鱼：状如鲋而彘毛，振鳍而飞
+  zhuanyu(B, c, a) {
+    addSpine(B, c, { len: 2.0, r: 0.50, segs: 5, y: 1.5, taper: 0.34, wave: 0.12 });
+    // 胸鳍当翼
+    addWing(B, a, -1, { span: 2.0, chord: 0.95, y: 1.58, z: 0.20, flap: 0.85, emis: 0.20 });
+    addWing(B, a, 1, { span: 2.0, chord: 0.95, y: 1.58, z: 0.20, flap: 0.85, emis: 0.20 });
+    addHead(B, c, a, { y: 1.56, z: 1.16, r: 0.36, jaw: true, eyeColor: [1.0, 0.8, 0.35] });
+    // 彘毛：背上一排硬鬃
+    for (let i = 0; i < 9; i++) {
+      const t = i / 8;
+      const g = cone(0.05, 0.30, 4, 1.0);
+      T(g, 0, 1.86, 0.85 - t * 1.9, -0.42, 0, 0);
+      B.push(g, a, 0.24, [0.10 + t * 0.2, t * 2.0, 0, 0]);
+    }
+    const tf = box(0.06, 0.95, 0.75, 0.8);
+    T(tf, 0, 1.52, -1.20);
+    B.push(tf, a, 0.24, [0.34, 2.0, 0, 0]);
+  },
+  // 禺彊：人面鸟身，珥两青蛇，践两青蛇
+  yuqiang(B, c, a) {
+    addSpine(B, c, { len: 2.6, r: 0.98, segs: 5, y: 2.30, taper: 0.62, wave: 0.05 });
+    addWing(B, a, -1, { span: 3.6, chord: 1.5, y: 2.55, z: 0.20, flap: 0.40, emis: 0.20 });
+    addWing(B, a, 1, { span: 3.6, chord: 1.5, y: 2.55, z: 0.20, flap: 0.40, emis: 0.20 });
+    // 人面
+    const f = ellip(0.62, 0.74, 0.42, 12);
+    T(f, 0, 3.24, 1.28);
+    B.push(f, a, 0.08, [0.06, 0, 0, 0]);
+    for (const ex of [-0.24, 0.24]) {
+      B.push(T(ellip(0.13, 0.10, 0.08, 8), ex, 3.36, 1.66), [0.55, 1.0, 1.0], 1.0, [0.06, 0, 0, 0]);
+    }
+    // 耳上与足下各一对青蛇
+    for (const s of [-1, 1]) {
+      for (let i = 0; i < 6; i++) {
+        const t = i / 5;
+        const rr = 0.11 * (1 - t * 0.45);
+        B.push(T(ellip(rr, rr, rr * 1.6, 8),
+          s * (0.74 + Math.sin(t * 3.6) * 0.26), 3.06 - t * 0.90, 1.16 + Math.cos(t * 2.4) * 0.20),
+          [0.24, 0.82, 0.72], 0.36, [0.30 + t * 0.4, s * 2 + t * 3, 0, 0]);
+        B.push(T(ellip(rr, rr, rr * 1.6, 8),
+          s * (0.62 + Math.sin(t * 3.2) * 0.40), 0.30, 0.20 - t * 1.5),
+          [0.24, 0.82, 0.72], 0.30, [0.34 + t * 0.4, s * 3 + t * 2.4, 0, 0]);
+      }
+      addLeg(B, c, s * 0.56, -0.10, { h: 1.95, r: 0.22, phase: s > 0 ? 0 : 3.1, y: 2.10, swing: 0.14 });
+    }
+    addRidge(B, a, { from: 1.4, to: -1.5, y: 2.94, h: 0.30, n: 8, emis: 0.28 });
+  },
+
+  /* ============================================================
+     五 · 昆仑天阙
+     ============================================================ */
+  // 土蝼：状如羊而四角
+  tulou(B, c, a) {
+    addSpine(B, c, { len: 2.6, r: 0.54, segs: 6, y: 1.18, taper: 0.54, wave: 0.05 });
+    for (const [x, z, ph] of [[-0.40, 0.88, 0], [0.40, 0.88, 3.1], [-0.40, -0.78, 3.1], [0.40, -0.78, 0]])
+      addLeg(B, c, x, z, { h: 1.18, r: 0.14, phase: ph, y: 1.18, swing: 0.18, claw: false });
+    addHead(B, c, a, { y: 1.44, z: 1.36, r: 0.36, eyeColor: [1.0, 0.9, 0.4] });
+    // 四角：两对，前小后大
+    for (const s of [-1, 1]) {
+      for (let k = 0; k < 2; k++) {
+        const hn = cone(0.11 - k * 0.02, 0.66 + k * 0.30, 6, 0.8);
+        T(hn, s * (0.24 + k * 0.14), 1.70 + k * 0.06, 1.16 - k * 0.30, -0.34 - k * 0.2, 0, s * (0.8 + k * 0.45));
+        B.push(hn, a, 0.16, [0.05, 0, 0, 0]);
+      }
+    }
+    // 羊毛：一圈蓬松的团块
+    for (let i = 0; i < 10; i++) {
+      const ang = (i / 10) * Math.PI * 2;
+      B.push(T(ellip(0.26, 0.24, 0.26, 8),
+        Math.cos(ang) * 0.48, 1.44 + Math.sin(ang * 2) * 0.12, Math.sin(ang) * 0.72 - 0.1),
+        c, 0, [0.06, i * 0.6, 0, 0]);
+    }
+    addTail(B, c, { len: 0.8, r: 0.11, y: 1.24, z: -1.24, curve: -0.2, segs: 3 });
+  },
+  // 英招：马身人面，虎文鸟翼
+  yingzhao(B, c, a) {
+    addSpine(B, c, { len: 3.0, r: 0.60, segs: 6, y: 1.62, taper: 0.52, wave: 0.05 });
+    for (const [x, z, ph] of [[-0.46, 1.05, 0], [0.46, 1.05, 3.1], [-0.46, -0.95, 3.1], [0.46, -0.95, 0]])
+      addLeg(B, c, x, z, { h: 1.62, r: 0.15, phase: ph, y: 1.62, swing: 0.22, claw: false });
+    addWing(B, a, -1, { span: 3.0, chord: 1.25, y: 2.10, z: 0.15, flap: 0.55, emis: 0.22 });
+    addWing(B, a, 1, { span: 3.0, chord: 1.25, y: 2.10, z: 0.15, flap: 0.55, emis: 0.22 });
+    // 马颈
+    const nk = cyl(0.24, 0.34, 1.0, 8, 0.6);
+    T(nk, 0, 2.16, 1.42, 0.62, 0, 0);
+    B.push(nk, c, 0, [0.06, 0, 0, 0]);
+    // 人面
+    const f = ellip(0.32, 0.40, 0.26, 10);
+    T(f, 0, 2.66, 1.86);
+    B.push(f, a, 0.06, [0.05, 0, 0, 0]);
+    for (const ex of [-0.12, 0.12]) {
+      B.push(T(ellip(0.065, 0.05, 0.05, 7), ex, 2.74, 2.06), [1.0, 0.95, 0.55], 1.0, [0.05, 0, 0, 0]);
+    }
+    // 鬃
+    for (let i = 0; i < 7; i++) {
+      const t = i / 6;
+      const g = box(0.06, 0.34, 0.20, 1.0);
+      T(g, 0, 2.50 - t * 0.55, 1.72 - t * 0.78, -0.3, 0, 0);
+      B.push(g, a, 0.14, [0.10 + t * 0.2, t * 2.2, 0, 0]);
+    }
+    // 虎文
+    for (let i = 0; i < 8; i++) {
+      const t = i / 7;
+      const g = box(0.07, 0.30, 0.10, 1.0);
+      T(g, Math.sin(i * 1.7) * 0.52, 1.98, 1.2 - t * 2.3, 0, 0, Math.sin(i) * 0.6);
+      B.push(g, a, 0.10, [0.06, 0, 0, 0]);
+    }
+    addTail(B, a, { len: 1.9, r: 0.10, y: 1.72, z: -1.58, curve: 0.14, segs: 5, emis: 0.16 });
+  },
+  // 陆吾：虎身九尾，人面虎爪
+  luwu(B, c, a) {
+    addSpine(B, c, { len: 3.2, r: 0.66, segs: 6, y: 1.44, taper: 0.50, wave: 0.05 });
+    for (const [x, z, ph] of [[-0.54, 1.12, 0], [0.54, 1.12, 3.1], [-0.54, -1.0, 3.1], [0.54, -1.0, 0]])
+      addLeg(B, c, x, z, { h: 1.44, r: 0.19, phase: ph, y: 1.44, swing: 0.18 });
+    // 人面
+    const f = ellip(0.46, 0.56, 0.34, 11);
+    T(f, 0, 1.98, 1.76);
+    B.push(f, a, 0.07, [0.05, 0, 0, 0]);
+    for (const ex of [-0.17, 0.17]) {
+      B.push(T(ellip(0.09, 0.075, 0.06, 8), ex, 2.08, 2.06), [1.0, 0.92, 0.45], 1.0, [0.05, 0, 0, 0]);
+    }
+    addEars(B, c, { y: 2.28, z: 1.62, r: 0.14, spread: 0.36, len: 0.36, tilt: 0.12 });
+    addRidge(B, a, { from: 1.5, to: -1.5, y: 1.92, h: 0.24, n: 8, emis: 0.20 });
+    for (let i = 0; i < 9; i++)
+      addTail(B, a, {
+        len: 2.1, r: 0.12, y: 1.58, z: -1.55, ang: (i - 4) * 0.23,
+        phase: i * 0.9, emis: 0.26, curve: 0.50, segs: 5,
+      });
+  },
+  // 开明兽：身大类虎而九首，皆人面
+  kaiming(B, c, a) {
+    addSpine(B, c, { len: 4.2, r: 1.02, segs: 7, y: 2.05, taper: 0.60, wave: 0.04 });
+    for (const [x, z, ph] of [[-0.84, 1.5, 0], [0.84, 1.5, 3.1], [-0.84, -1.35, 3.1], [0.84, -1.35, 0]])
+      addLeg(B, c, x, z, { h: 2.05, r: 0.30, phase: ph, y: 2.05, swing: 0.15 });
+    // 九首：一列人面，中间的最高
+    for (let i = 0; i < 9; i++) {
+      const k = i - 4;
+      const ang = k * 0.19;
+      const rise = 1.0 - Math.abs(k) * 0.11;
+      const nx = Math.sin(ang) * 1.5;
+      const nz = 2.05 + Math.cos(ang) * 0.30;
+      const nk = cyl(0.13, 0.21, 1.1 + rise * 0.5, 7, 0.8);
+      T(nk, nx * 0.55, 2.45 + rise * 0.42, nz * 0.62, 0.52, 0, -ang * 1.15);
+      B.push(nk, c, 0, [0.10, i * 0.7, 0, 0]);
+      // 人面：脸盘 + 一对金瞳
+      const f = ellip(0.26, 0.32, 0.20, 9);
+      T(f, nx, 2.95 + rise * 0.80, nz);
+      B.push(f, a, 0.08, [0.10, i * 0.7, 0, 0]);
+      for (const ex of [-0.10, 0.10]) {
+        B.push(T(ellip(0.055, 0.045, 0.04, 6), nx + ex, 3.02 + rise * 0.80, nz + 0.17),
+          [1.0, 0.90, 0.40], 1.0, [0.10, i * 0.7, 0, 0]);
+      }
+      // 冠
+      const cr = cone(0.07, 0.28, 5, 1.0);
+      T(cr, nx, 3.30 + rise * 0.80, nz - 0.06, -0.2, 0, -ang);
+      B.push(cr, a, 0.24, [0.10, i * 0.7, 0, 0]);
+    }
+    addRidge(B, a, { from: 1.8, to: -2.0, y: 2.62, h: 0.34, n: 10, emis: 0.24 });
+    addTail(B, c, { len: 2.6, r: 0.24, y: 2.10, z: -2.2, curve: 0.24, segs: 6, emis: 0.12 });
+  },
 };
 
 export function buildBeastGeometry(def) {
@@ -733,6 +1122,12 @@ export class GroundBlobs {
     this.aBlob.needsUpdate = true;
     this.aDark.needsUpdate = true;
   }
+  dispose(scene) {
+    this.geo.dispose();
+    this.material.dispose();
+    scene.remove(this.mesh);
+  }
+
 }
 
 /* ============================================================
@@ -811,4 +1206,10 @@ export class HealthBars {
     this.aPos.needsUpdate = true;
     this.aInfo.needsUpdate = true;
   }
+  dispose(scene) {
+    this.geo.dispose();
+    this.material.dispose();
+    scene.remove(this.mesh);
+  }
+
 }

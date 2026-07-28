@@ -1,14 +1,15 @@
-// 山川 —— 谷地高程场、层叠梯田、环谷喀斯特峰林与青石广场
+// 山川 —— 高程场引擎。地貌本身写在 levels.js 里，这里只负责把它变成网格。
 import * as THREE from 'three';
 import { Noise, Rng, clamp, lerp, smoothstep } from '../core/noise.js';
 import { buildTexture, colorOf, normalOf, roughnessOf } from '../core/textures.js';
 import { toonify } from '../core/toon.js';
 import {
-  VALLEY_C, WATER_Y, PLAZA, distToRiver, distToAnyPath, terraceHeight,
+  LEVEL, VALLEY_C, WATER_Y, PLAZA, distToRiver, distToAnyPath, inFootprint,
 } from './layout.js';
 
 const n1 = new Noise(4242);
 const n2 = new Noise(9911);
+const n3 = new Noise(1733);
 
 export class Terrain {
   constructor(scene) {
@@ -16,76 +17,21 @@ export class Terrain {
     this.pads = [];
     this.group = new THREE.Group();
     scene.add(this.group);
-    this._cache = new Map();
+    this.level = LEVEL;
+    this.geo = LEVEL.geo;
+
+    // 递给关卡高程函数的工具箱
+    this.H = {
+      n1, n2, n3, clamp, lerp, smoothstep,
+      dRiver: distToRiver,
+      dPath: distToAnyPath,
+      C: VALLEY_C,
+    };
   }
 
   // ---- 未经平整的原始高程 --------------------------------------------
   baseHeight(x, z) {
-    const dxc = x - VALLEY_C.x, dzc = z - VALLEY_C.z;
-
-    // 谷底起伏
-    let h = n1.fbm2(x * 0.0125, z * 0.0125, 4) * 1.9
-          + n1.fbm2(x * 0.052, z * 0.052, 3) * 0.42
-          + n1.fbm2(x * 0.0068 + 30, z * 0.0068, 3) * 4.2;
-
-    // 后山梯田
-    h += terraceHeight(z);
-
-    // 环谷山体（椭圆距离）
-    const ex = dxc / 106, ez = dzc / 94;
-    const er = Math.sqrt(ex * ex + ez * ez);
-    let rimT = smoothstep(1.02, 1.72, er);
-    if (rimT > 0) {
-      const ridge = n2.ridge2(x * 0.0072, z * 0.0072, 5, 2.1, 0.52);
-      const ridge2 = n2.ridge2(x * 0.019 + 40, z * 0.019, 4, 2.2, 0.5);
-      // 喀斯特：陡立的峰体
-      const peak = Math.pow(clamp(ridge, 0, 1), 0.62) * 52 + Math.pow(clamp(ridge2, 0, 1), 1.6) * 18;
-      let rim = rimT * (16 + peak);
-      // 溪流出谷处切出峡口
-      const dr = distToRiver(x, z);
-      const gorge = 1 - smoothstep(5, 30, dr);
-      rim *= (1 - gorge * 0.86);
-      h += rim;
-    }
-
-    // 更远处的峰林 —— 向北（-z）开一道谷口，让层叠远山与天空露出来
-    const rr = Math.hypot(dxc, dzc);
-    if (rr > 130) {
-      // 与 -z 轴的夹角：谷口方向压低山体
-      const ang = Math.atan2(dxc, -dzc);
-      const notch = 1 - 0.80 * Math.exp(-Math.pow(ang / 0.46, 2))
-                      - 0.30 * Math.exp(-Math.pow(ang / 1.05, 2));
-      const far = smoothstep(130, 400, rr);
-      const rg = n2.ridge2(x * 0.0031 + 90, z * 0.0031, 6, 2.05, 0.5);
-      const rg2 = n2.ridge2(x * 0.0088 + 300, z * 0.0088, 4, 2.2, 0.5);
-      const strata = Math.sin(rg * 30) * 0.022;
-      const peaks = Math.pow(clamp(rg, 0, 1), 0.5) * 330 + Math.pow(clamp(rg2, 0, 1), 1.7) * 90 + strata * 220;
-      h += far * peaks * Math.max(0.12, notch);
-      // 天际线上最高的一层
-      h += smoothstep(330, 820, rr) * Math.pow(clamp(n2.ridge2(x * 0.0016, z * 0.0016, 5), 0, 1), 0.62) * 460
-           * Math.max(0.18, 1 - 0.62 * Math.exp(-Math.pow(ang / 0.62, 2)));
-    }
-
-    // 谷口走廊：向北压低地形，露出层叠远山与天空；两侧留下高耸峰体
-    if (rr > 120) {
-      const ang = Math.atan2(dxc, -dzc);
-      const corridor = Math.exp(-Math.pow(ang / 0.40, 2));
-      if (corridor > 0.015) {
-        const spire = Math.pow(clamp(n2.simplex2(x * 0.0021 + 11, z * 0.0021 - 7), 0, 1), 2.6);
-        const cap = 26 + rr * 0.050 + spire * 340 * smoothstep(430, 720, rr);
-        const capped = Math.min(h, cap);
-        h = lerp(h, capped, corridor * smoothstep(120, 190, rr));
-      }
-    }
-
-    // 河床下切
-    const dRiver = distToRiver(x, z);
-    const carve = (1 - smoothstep(3.2, 12.0, dRiver)) * 4.4;
-    h -= carve;
-    // 河岸缓坡
-    h -= (1 - smoothstep(10, 22, dRiver)) * 0.5;
-
-    return h;
+    return this.geo.height(x, z, this.H);
   }
 
   registerPad(x, z, rx, rz, rot, y, feather = 3.5) {
@@ -106,26 +52,31 @@ export class Terrain {
     return [bestW, bestY];
   }
 
-  // ---- 最终高程（含平台与兽道）--------------------------------------
-  heightAt(x, z) {
+  // ---- 找平之前的地面：兽道浅沟 + 广场，但不含建筑台基 ----------------
+  // 台基的高度必须从这里取。若直接用 baseHeight，广场里的宅基就会比找平后的
+  // 广场面高低几米，凭空出现深坑与高台。
+  groundY(x, z) {
     let h = this.baseHeight(x, z);
-
+    // 兽道踏出的浅沟 —— 必须排在找平之前，否则会把台基边缘又挖掉一圈，
+    // 沿着压顶石板露出 0.3~0.4 米的缝
+    const dp = distToAnyPath(x, z);
+    if (dp < 7) h -= (1 - smoothstep(0, 5.2, dp)) * 0.36;
     // 广场平整
     const pm = this.plazaMask(x, z);
-    if (pm > 0) h = lerp(h, 0, pm);
-
-    // 建筑台基
-    const [pw, py] = this.padInfluence(x, z);
-    if (pw > 0) h = lerp(h, py, pw);
-
-    // 兽道踏出的浅沟
-    const dp = distToAnyPath(x, z);
-    if (dp < 7) {
-      const t = 1 - smoothstep(0, 5.2, dp);
-      h -= t * 0.36;
-    }
+    if (pm > 0) h = lerp(h, this.plazaY, pm);
     return h;
   }
+
+  // ---- 最终高程（含建筑台基）----------------------------------------
+  heightAt(x, z) {
+    let h = this.groundY(x, z);
+    const [pw, py] = this.padInfluence(x, z);
+    if (pw > 0) h = lerp(h, py, pw);
+    return h;
+  }
+
+  // 广场找平的目标高度：由关卡指定，村寨的一切摆件都以它为基准面
+  get plazaY() { return this.geo.plazaY || 0; }
 
   plazaMask(x, z) {
     const cx = (PLAZA.x0 + PLAZA.x1) / 2, cz = (PLAZA.z0 + PLAZA.z1) / 2;
@@ -133,12 +84,11 @@ export class Terrain {
     const wob = n1.fbm2(x * 0.045, z * 0.045, 3) * 5.0;
     const dx = Math.abs(x - cx) - hx + wob;
     const dz = Math.abs(z - cz) - hz + wob;
-    const d = Math.max(dx, dz);
-    return 1 - smoothstep(-1.5, 9.0, d);
+    return 1 - smoothstep(-1.5, 9.0, Math.max(dx, dz));
   }
 
   // 预烘一张高度查询表，供每帧的怪物落地与光标求交使用
-  buildLUT(half = 168, step = 1.5) {
+  buildLUT(half = 180, step = 1.4) {
     const n = Math.ceil((half * 2) / step) + 1;
     const arr = new Float32Array(n * n);
     for (let j = 0; j < n; j++) {
@@ -167,8 +117,7 @@ export class Terrain {
   normalAt(x, z, eps = 0.9) {
     const hL = this.heightAt(x - eps, z), hR = this.heightAt(x + eps, z);
     const hD = this.heightAt(x, z - eps), hU = this.heightAt(x, z + eps);
-    const n = new THREE.Vector3(hL - hR, 2 * eps, hD - hU);
-    return n.normalize();
+    return new THREE.Vector3(hL - hR, 2 * eps, hD - hU).normalize();
   }
 
   slopeAt(x, z, eps = 1.2) {
@@ -177,13 +126,86 @@ export class Terrain {
     return Math.hypot(hR - hL, hU - hD) / (2 * eps);
   }
 
+  // 一块地是否平整到可以摆东西 —— 道具、植被、机关都用它，避免半悬在坎上
+  isFlat(x, z, radius = 1.6, tol = 0.55) {
+    const y = this.surfaceY(x, z);
+    for (let i = 0; i < 6; i++) {
+      const a = (i / 6) * Math.PI * 2;
+      const d = this.surfaceY(x + Math.cos(a) * radius, z + Math.sin(a) * radius);
+      if (Math.abs(d - y) > tol) return false;
+    }
+    return true;
+  }
+
+  // 一块地的最大高差，用于判断塔基／道具会不会一角翘起来
+  reliefAt(x, z, radius = 2.2) {
+    let lo = Infinity, hi = -Infinity;
+    for (let i = 0; i < 6; i++) {
+      const a = (i / 6) * Math.PI * 2;
+      const d = this.surfaceY(x + Math.cos(a) * radius, z + Math.sin(a) * radius);
+      if (d < lo) lo = d;
+      if (d > hi) hi = d;
+    }
+    const c = this.surfaceY(x, z);
+    return Math.max(hi, c) - Math.min(lo, c);
+  }
+
+  /* ------------------------------------------------------------------
+     渲染面的真实高度
+     ------------------------------------------------------------------
+     地形显示的是径向网格，不是解析高程场。山脊上一个三角形能跨好几米，
+     解析值与实际画出来的面能差出好几米 —— 远山上的树就是这么浮起来的。
+     这里按与建网格完全一致的顶点顺序做三角形插值，取到的就是眼睛看到的面。
+  */
+  surfaceY(x, z) {
+    const g = this._pickGrid(x, z);
+    if (!g) return this.heightAt(x, z);
+    const dx = x - VALLEY_C.x, dz = z - VALLEY_C.z;
+    const r = Math.hypot(dx, dz);
+    let ang = Math.atan2(dz, dx);
+    if (ang < 0) ang += Math.PI * 2;
+
+    // 反解环号：r = r0 + (r1-r0) * t^power
+    const t = Math.pow((r - g.r0) / (g.r1 - g.r0), 1 / g.power);
+    const fi = t * g.rings;
+    const fj = (ang / (Math.PI * 2)) * g.seg;
+    let i = Math.floor(fi), j = Math.floor(fj);
+    if (i < 0) i = 0; if (i > g.rings - 1) i = g.rings - 1;
+    if (j < 0) j = 0; if (j > g.seg - 1) j = g.seg - 1;
+    const u = fi - i, v = fj - j;
+
+    const row = g.seg + 1;
+    const yA = g.y[i * row + j];             // (i,   j)
+    const yB = g.y[i * row + j + 1];         // (i,   j+1)
+    const yC = g.y[(i + 1) * row + j];       // (i+1, j)
+    const yD = g.y[(i + 1) * row + j + 1];   // (i+1, j+1)
+
+    // 建索引时的两个三角形：(A,B,C) 与 (B,D,C)，对角线是 u+v=1
+    if (u + v <= 1) return yA + (yB - yA) * v + (yC - yA) * u;
+    const uu = 1 - u, vv = 1 - v;
+    return yD + (yC - yD) * vv + (yB - yD) * uu;
+  }
+
+  _pickGrid(x, z) {
+    const dx = x - VALLEY_C.x, dz = z - VALLEY_C.z;
+    const r = Math.hypot(dx, dz);
+    const a = this._gridInner, b = this._gridOuter;
+    if (a && r >= a.r0 && r <= a.r1) return a;
+    if (b && r >= b.r0 && r <= b.r1) return b;
+    return null;
+  }
+
   // ---- 网格构建 ------------------------------------------------------
-  _radialGeometry(r0, r1, rings, seg, power) {
-    const verts = (rings + 1) * (seg + 1);
+  _radialGeometry(r0, r1, rings, seg, power, store) {
+    const row = seg + 1;
+    const verts = (rings + 1) * row;
     const pos = new Float32Array(verts * 3);
     const col = new Float32Array(verts * 3);
     const uv = new Float32Array(verts * 2);
     const idx = [];
+
+    // 第一遍：只求高程。坡度留到第二遍用邻格差分算 ——
+    // 逐点再调四次 heightAt 会让整关的构建慢五倍。
     let vi = 0;
     for (let i = 0; i <= rings; i++) {
       const t = i / rings;
@@ -192,12 +214,29 @@ export class Terrain {
         const a = (j / seg) * Math.PI * 2;
         const x = VALLEY_C.x + Math.cos(a) * r;
         const z = VALLEY_C.z + Math.sin(a) * r;
-        const y = this.heightAt(x, z);
-        pos[vi * 3] = x; pos[vi * 3 + 1] = y; pos[vi * 3 + 2] = z;
+        pos[vi * 3] = x; pos[vi * 3 + 1] = this.heightAt(x, z); pos[vi * 3 + 2] = z;
         uv[vi * 2] = x * 0.02; uv[vi * 2 + 1] = z * 0.02;
-        const c = this._surfaceWeights(x, z, y);
-        col[vi * 3] = c[0]; col[vi * 3 + 1] = c[1]; col[vi * 3 + 2] = c[2];
         vi++;
+      }
+    }
+
+    // 第二遍：邻格差分求坡度，再问关卡要表层配比
+    for (let i = 0; i <= rings; i++) {
+      for (let j = 0; j <= seg; j++) {
+        const k = i * row + j;
+        const x = pos[k * 3], y = pos[k * 3 + 1], z = pos[k * 3 + 2];
+        const kIn = Math.max(0, i - 1) * row + j;
+        const kOut = Math.min(rings, i + 1) * row + j;
+        const kA = i * row + (j === 0 ? seg - 1 : j - 1);
+        const kB = i * row + (j === seg ? 1 : j + 1);
+        const dRad = Math.hypot(pos[kOut * 3] - pos[kIn * 3], pos[kOut * 3 + 2] - pos[kIn * 3 + 2]) || 1;
+        const dTan = Math.hypot(pos[kB * 3] - pos[kA * 3], pos[kB * 3 + 2] - pos[kA * 3 + 2]) || 1;
+        const gRad = (pos[kOut * 3 + 1] - pos[kIn * 3 + 1]) / dRad;
+        const gTan = (pos[kB * 3 + 1] - pos[kA * 3 + 1]) / dTan;
+        const slope = Math.hypot(gRad, gTan);
+        const w = this.geo.surface(x, z, y, slope, this.H);
+        const sum = w[0] + w[1] + w[2] || 1;
+        col[k * 3] = w[0] / sum; col[k * 3 + 1] = w[1] / sum; col[k * 3 + 2] = w[2] / sum;
       }
     }
     for (let i = 0; i < rings; i++) {
@@ -214,37 +253,34 @@ export class Terrain {
     g.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
     g.setIndex(idx);
     g.computeVertexNormals();
+
+    // 留一份高度表，surfaceY 靠它还原「画出来的那个面」
+    if (store) {
+      const ys = new Float32Array(verts);
+      for (let k = 0; k < verts; k++) ys[k] = pos[k * 3 + 1];
+      this[store] = { r0, r1, rings, seg, power, y: ys };
+    }
     return g;
   }
 
-  // 表层权重：r=草 g=土 b=岩
+  // 表层权重：三层材质的混合比
   _surfaceWeights(x, z, y) {
     const slope = this.slopeAt(x, z, 1.6);
-    const dp = distToAnyPath(x, z);
-    const dr = distToRiver(x, z);
-
-    let rock = smoothstep(0.52, 1.05, slope) + smoothstep(26, 56, y) * 1.0;
-    rock = clamp(rock, 0, 1);
-
-    // 兽道踩秃的土路
-    let soil = (1 - smoothstep(1.6, 5.4, dp)) * 0.95;
-    // 河滩
-    soil = Math.max(soil, (1 - smoothstep(2.5, 9.0, dr)) * 0.8);
-    // 随机裸土斑块
-    soil = Math.max(soil, smoothstep(0.42, 0.78, n1.fbm2(x * 0.03, z * 0.03, 4) * 0.5 + 0.5) * 0.55);
-    soil = clamp(soil * (1 - rock * 0.7), 0, 1);
-
-    const grass = clamp(1 - rock - soil, 0, 1);
-    const s = grass + soil + rock || 1;
-    return [grass / s, soil / s, rock / s];
+    const w = this.geo.surface(x, z, y, slope, this.H);
+    const s = w[0] + w[1] + w[2] || 1;
+    return [w[0] / s, w[1] / s, w[2] / s];
   }
 
   _material() {
-    const tGrass = colorOf('grassGround', 1);
-    const tSoil = colorOf('soil', 1);
-    const tRock = colorOf('rock', 1);
+    const tex = this.geo.tex;
+    const tA = colorOf(tex[0], 1);
+    const tB = colorOf(tex[1], 1);
+    const tC = colorOf(tex[2], 1);
     const tMacro = colorOf('noiseRGBA', 1);
-    [tGrass, tSoil, tRock, tMacro].forEach(t => { t.wrapS = t.wrapT = THREE.RepeatWrapping; });
+    [tA, tB, tC, tMacro].forEach(t => { t.wrapS = t.wrapT = THREE.RepeatWrapping; });
+
+    const warm = this.geo.macroWarm || [1.12, 1.02, 0.84];
+    const cool = this.geo.macroCool || [0.94, 1.00, 0.92];
 
     const mat = new THREE.MeshStandardMaterial({
       vertexColors: true,
@@ -254,34 +290,61 @@ export class Terrain {
       dithering: true,
     });
     mat.onBeforeCompile = (shader) => {
-      shader.uniforms.tGrass = { value: tGrass };
-      shader.uniforms.tSoil = { value: tSoil };
-      shader.uniforms.tRock = { value: tRock };
+      shader.uniforms.tA = { value: tA };
+      shader.uniforms.tB = { value: tB };
+      shader.uniforms.tC = { value: tC };
       shader.uniforms.tMacro = { value: tMacro };
       shader.vertexShader = shader.vertexShader
-        .replace('#include <common>', `#include <common>\nvarying vec3 vWorldP;`)
-        .replace('#include <project_vertex>', `#include <project_vertex>\n vWorldP = (modelMatrix * vec4(transformed, 1.0)).xyz;`);
+        .replace('#include <common>', `#include <common>\nvarying vec3 vWorldP;\nvarying vec3 vWorldN;`)
+        .replace('#include <project_vertex>', `#include <project_vertex>
+          vWorldP = (modelMatrix * vec4(transformed, 1.0)).xyz;
+          vWorldN = normalize(mat3(modelMatrix) * objectNormal);`);
       shader.fragmentShader = shader.fragmentShader
         .replace('#include <common>', `#include <common>
           varying vec3 vWorldP;
-          uniform sampler2D tGrass, tSoil, tRock, tMacro;`)
+          varying vec3 vWorldN;
+          uniform sampler2D tA, tB, tC, tMacro;
+
+          // 三平面投影：崖壁上不再把贴图拉成一条条
+          vec3 triplanar(sampler2D t, vec3 p, vec3 n, float scale) {
+            vec3 bw = pow(abs(n), vec3(4.0));
+            bw /= max(bw.x + bw.y + bw.z, 0.0001);
+            vec3 cx = texture2D(t, p.zy * scale).rgb;
+            vec3 cy = texture2D(t, p.xz * scale).rgb;
+            vec3 cz = texture2D(t, p.xy * scale).rgb;
+            return cx * bw.x + cy * bw.y + cz * bw.z;
+          }`)
         .replace('#include <color_fragment>', `
-          vec3 w = normalize(max(vColor.rgb, vec3(0.0001)));
-          w = vColor.rgb / max(vColor.r + vColor.g + vColor.b, 0.0001);
-          vec2 wuv = vWorldP.xz;
-          vec3 cg = texture2D(tGrass, wuv * 0.085).rgb;
-          // 第二层旋转 90° 再叠，草纹交织，不会拉出一道道长条
-          vec3 cg2 = texture2D(tGrass, vec2(wuv.y, -wuv.x) * 0.026).rgb;
-          cg = mix(cg, cg2, 0.30);
-          vec3 cs = texture2D(tSoil, wuv * 0.11).rgb;
-          vec3 cr = texture2D(tRock, wuv * 0.042).rgb;
-          vec3 cr2 = texture2D(tRock, wuv * 0.0092).rgb;
-          cr = mix(cr, cr2, 0.5);
-          vec3 blended = cg * w.r + cs * w.g + cr * w.b;
+          vec3 w = vColor.rgb / max(vColor.r + vColor.g + vColor.b, 0.0001);
+          vec3 P = vWorldP;
+          vec3 N = normalize(vWorldN);
+          float flatness = clamp(N.y, 0.0, 1.0);
+
+          // 平地按世界 xz 平铺（便宜），陡坡换三平面（不拉伸）
+          vec2 wuv = P.xz;
+          vec3 ca = texture2D(tA, wuv * 0.085).rgb;
+          vec3 ca2 = texture2D(tA, vec2(wuv.y, -wuv.x) * 0.026).rgb;
+          ca = mix(ca, ca2, 0.30);
+          vec3 cb = texture2D(tB, wuv * 0.11).rgb;
+
+          vec3 cc = triplanar(tC, P, N, 0.042);
+          vec3 cc2 = triplanar(tC, P, N, 0.0092);
+          cc = mix(cc, cc2, 0.5);
+
+          // 陡处把前两层也换成三平面，坡面才不糊
+          if (flatness < 0.72) {
+            float k = smoothstep(0.72, 0.34, flatness);
+            ca = mix(ca, triplanar(tA, P, N, 0.085), k);
+            cb = mix(cb, triplanar(tB, P, N, 0.11), k);
+          }
+
+          vec3 blended = ca * w.r + cb * w.g + cc * w.b;
+
           // 大尺度色彩变化，打散平铺感
           vec3 macro = texture2D(tMacro, wuv * 0.0043).rgb;
           blended *= mix(vec3(0.78), vec3(1.22), macro.r);
-          blended *= mix(vec3(0.94, 1.0, 0.92), vec3(1.12, 1.02, 0.84), macro.g);
+          blended *= mix(vec3(${cool[0]}, ${cool[1]}, ${cool[2]}),
+                         vec3(${warm[0]}, ${warm[1]}, ${warm[2]}), macro.g);
           diffuseColor.rgb *= blended;
         `);
       this._terrainShader = shader;
@@ -293,13 +356,16 @@ export class Terrain {
 
   build() {
     const matA = this._material();
-    const inner = this._radialGeometry(0.6, 148, 118, 256, 1.42);
+    // 内圈一直铺到 320：远山上的松林就落在这一圈里，
+    // 网格够密，树才不会浮在山脊的三角形上面
+    this.innerR = 320;
+    const inner = this._radialGeometry(0.6, this.innerR, 152, 300, 1.46, '_gridInner');
     this.mesh = new THREE.Mesh(inner, matA);
     this.mesh.receiveShadow = true;
     this.mesh.castShadow = false;
     this.group.add(this.mesh);
 
-    const outer = this._radialGeometry(148, 940, 120, 224, 1.75);
+    const outer = this._radialGeometry(this.innerR, 980, 96, 208, 1.7, '_gridOuter');
     const matB = this._material();
     matB.roughness = 1.0;
     this.outerMesh = new THREE.Mesh(outer, matB);
@@ -312,9 +378,9 @@ export class Terrain {
     return this;
   }
 
-  // ---- 青石广场 ------------------------------------------------------
+  // ---- 广场铺地 ------------------------------------------------------
   _buildPlaza() {
-    const seg = 132;
+    const seg = 140;
     const cx = (PLAZA.x0 + PLAZA.x1) / 2, cz = (PLAZA.z0 + PLAZA.z1) / 2;
     const hx = (PLAZA.x1 - PLAZA.x0) / 2, hz = (PLAZA.z1 - PLAZA.z0) / 2;
     const pos = [], uv = [], idx = [];
@@ -324,7 +390,8 @@ export class Terrain {
         const u = j / gw, v = i / gh;
         const x = cx + (u - 0.5) * hx * 2.16;
         const z = cz + (v - 0.5) * hz * 2.16;
-        pos.push(x, this.heightAt(x, z) + 0.045, z);
+        // 抬高 12cm 而不是 4.5cm：远景下 z-buffer 精度不足时不会闪
+        pos.push(x, this.heightAt(x, z) + 0.12, z);
         uv.push(x * 0.105, z * 0.105);
       }
     }
@@ -335,26 +402,45 @@ export class Terrain {
         const px = pos[a * 3], pz = pos[a * 3 + 2];
         if (this.plazaMask(px, pz) < 0.55) continue;
         if (distToRiver(px, pz) < 6.6) continue;
+        // 建筑台基自带压顶石板，铺地再压过去就是两层共面的闪烁
+        if (inFootprint(px, pz, 0.4)) continue;
         idx.push(a, b, a + 1, b, b + 1, a + 1);
       }
     }
+    if (!idx.length) return;         // 归墟／昆仑这类广场落在水上的关卡，直接不铺
     const g = new THREE.BufferGeometry();
     g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
     g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
     g.setIndex(idx);
     g.computeVertexNormals();
 
-    const map = colorOf('flagstone', 1);
+    const name = this.geo.plazaTex;
     const mat = new THREE.MeshStandardMaterial({
-      map,
-      normalMap: normalOf('flagstone', 1.5, 1),
-      roughnessMap: roughnessOf('flagstone', 0.62, 0.98, false, 1),
+      map: colorOf(name, 1),
+      normalMap: normalOf(name, 1.5, 1),
+      roughnessMap: roughnessOf(name, 0.62, 0.98, false, 1),
       roughness: 1.0,
       metalness: 0.0,
       normalScale: new THREE.Vector2(0.85, 0.85),
+      polygonOffset: true,
+      polygonOffsetFactor: -1,
+      polygonOffsetUnits: -1,
     });
     this.plazaMesh = new THREE.Mesh(g, mat);
     this.plazaMesh.receiveShadow = true;
     this.group.add(this.plazaMesh);
+  }
+
+  dispose() {
+    this.group.traverse((o) => {
+      if (o.geometry) o.geometry.dispose();
+      if (o.material) {
+        const ms = Array.isArray(o.material) ? o.material : [o.material];
+        for (const m of ms) m.dispose();
+      }
+    });
+    this.scene.remove(this.group);
+    this.pads.length = 0;
+    this._lut = null;
   }
 }

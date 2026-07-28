@@ -3,15 +3,15 @@ import * as THREE from 'three';
 import { clamp, lerp, smoothstep, Rng } from '../core/noise.js';
 import { audio } from '../core/audio.js';
 import {
-  TOWERS, TOWER_BY_ID, ENEMIES, WAVES, SKILLS, RULES, ELEMENTS,
-  elementMult, endlessWave,
+  TOWERS, TOWER_BY_ID, ENEMIES, SKILLS, RULES, ELEMENTS,
+  elementMult, endlessWave, wavesOf,
 } from './config.js';
 import { BuildGrid } from './grid.js';
 import { TowerManager } from './towers.js';
 import { EnemyManager } from './enemies.js';
 import { Projectiles } from './projectiles.js';
 import { Sparks, Rings, Bolts, FloatText } from './fx.js';
-import { HEART, GATES, PATHS } from '../world/layout.js';
+import { LEVEL, HEART, GATES, PATHS } from '../world/layout.js';
 
 const V = new THREE.Vector3();
 const V2 = new THREE.Vector3();
@@ -32,9 +32,12 @@ export class Game {
     this.bolts = new Bolts(this.scene, 26, 9);
 
     this.state = 'menu';           // menu | build | wave | over
-    this.gold = RULES.startGold;
-    this.heart = RULES.startHeart;
-    this.maxHeart = RULES.startHeart;
+    const R = LEVEL.rules || RULES;
+    this.gold = R.startGold;
+    this.heart = R.startHeart;
+    this.maxHeart = R.startHeart;
+    this.levelIndex = LEVEL.index;
+    this.cleared = [];             // 已通关的关卡序号
     this.waveIndex = 0;
     this.speed = 1;
     this.surge = 0;
@@ -56,7 +59,7 @@ export class Game {
     this.showLinks = false;
     this.endlessAnnounced = false;
     this._bindInput();
-    this.heartPos = new THREE.Vector3(HEART.x, 2.5, HEART.z);
+    this.heartPos = new THREE.Vector3(HEART.x, this.terrain.plazaY + 2.5, HEART.z);
   }
 
   attachHUD(hud) {
@@ -101,7 +104,8 @@ export class Game {
     }
     if (k.startsWith('Digit')) {
       const n = parseInt(k.slice(5), 10);
-      if (n >= 1 && n <= TOWERS.length) { this.selectTowerType(TOWERS[n - 1].id); audio.click(); }
+      const list = this.towerList;
+      if (n >= 1 && n <= list.length) { this.selectTowerType(list[n - 1].id); audio.click(); }
       return;
     }
     if (k === 'KeyQ') { this.armSkill('bolt'); return; }
@@ -401,7 +405,7 @@ export class Game {
           speed: 7, color: 0xffd070, color2: 0xfff6d0, size: 6, life: 0.8, gravity: -0.1, up: 1.0,
         });
       }
-      this.rings.spawn(HEART.x, 1.4, HEART.z, 2, 90, 1.4, 0xffcf7a, 0.8);
+      this.rings.spawn(HEART.x, this.terrain.plazaY + 1.4, HEART.z, 2, 90, 1.4, 0xffcf7a, 0.8);
       g.uFlash.value.setRGB(0.24, 0.18, 0.06);
       this.toast('归元 · 机力充盈', 'good');
     }
@@ -409,8 +413,15 @@ export class Game {
   }
 
   /* ------------------------------------------------------ 波次 */
+  get level() { return LEVEL; }
+  get waves() { return wavesOf(LEVEL.id); }
+  get waveCount() { return this.waves.length; }
+  // 本关开放的机关谱
+  get towerList() { return LEVEL.towers.map(id => TOWER_BY_ID[id]).filter(Boolean); }
+
   get waveDef() {
-    return this.waveIndex < WAVES.length ? WAVES[this.waveIndex] : endlessWave(this.waveIndex + 1);
+    const W = this.waves;
+    return this.waveIndex < W.length ? W[this.waveIndex] : endlessWave(this.waveIndex + 1, LEVEL.id);
   }
 
   startWave() {
@@ -448,9 +459,10 @@ export class Game {
     this.stats.best = Math.max(this.stats.best, this.waveIndex);
     this.dayNight.toDay();
     this.toast(`本波平定 · 得灵石 ${reward}`, 'good');
-    this.floats && this.floats.spawn(HEART.x, 9, HEART.z, '+' + reward, 'gold big');
-    if (this.waveIndex >= WAVES.length && !this.endlessAnnounced) {
+    this.floats && this.floats.spawn(HEART.x, this.terrain.plazaY + 9, HEART.z, '+' + reward, 'gold big');
+    if (this.waveIndex >= this.waveCount && !this.endlessAnnounced) {
       this.endlessAnnounced = true;
+      if (!this.cleared.includes(this.levelIndex)) this.cleared.push(this.levelIndex);
       this.finish(true);
       return;
     }
@@ -482,11 +494,11 @@ export class Game {
     audio.heartHit();
     this.rig.shake(0.45);
     this.hurt = 1;
-    this.rings.spawn(HEART.x, 1.4, HEART.z, 2, 26, 0.8, 0xff5a3a, 1.0);
-    this.sparks.emit(HEART.x, 4, HEART.z, 40, {
+    this.rings.spawn(HEART.x, this.terrain.plazaY + 1.4, HEART.z, 2, 26, 0.8, 0xff5a3a, 1.0);
+    this.sparks.emit(HEART.x, this.terrain.plazaY + 4, HEART.z, 40, {
       speed: 11, color: 0xff5a3a, color2: 0xffc080, size: 8, life: 0.9, gravity: 0.6, up: 1.0,
     });
-    this.floats && this.floats.spawn(HEART.x, 7, HEART.z, '-' + dmg, 'bad big');
+    this.floats && this.floats.spawn(HEART.x, this.terrain.plazaY + 7, HEART.z, '-' + dmg, 'bad big');
     this.toast(`${e.def.name} 冲入村寨！`, 'bad');
     if (this.heart <= 0) this.finish(false);
   }
@@ -550,7 +562,9 @@ export class Game {
     this.towers.clear();
     this.enemies.clear();
     this.projectiles.clear();
-    this.gold = RULES.startGold;
+    const R = LEVEL.rules || RULES;
+    this.gold = R.startGold;
+    this.maxHeart = R.startHeart;
     this.heart = this.maxHeart;
     this.waveIndex = 0;
     this.waveActive = false;
@@ -572,6 +586,64 @@ export class Game {
     this.state = 'build';
     audio.resume();
     if (this.hud) this.hud.refreshAll();
+  }
+
+  /* --------------------------------------------- 换关：接上新的世界 */
+  setWorld(ctx) {
+    // 旧的格位、机关、兽群全部拆掉
+    this.towers.dispose();
+    this.enemies.dispose();
+    this.projectiles.clear();
+    this.grid.dispose();
+
+    Object.assign(this, ctx);
+    this.levelIndex = LEVEL.index;
+    this.grid = new BuildGrid(this.scene, this.terrain);
+    this.towers = new TowerManager(this.scene, this.terrain, this.grid, this);
+    this.enemies = new EnemyManager(this.scene, this.terrain, this);
+    this.heartPos.set(HEART.x, this.terrain.plazaY + 2.5, HEART.z);
+
+    const R = LEVEL.rules || RULES;
+    this.gold = R.startGold;
+    this.maxHeart = R.startHeart;
+    this.heart = this.maxHeart;
+    this.waveIndex = 0;
+    this.waveActive = false;
+    this.spawnQueue = [];
+    this.surge = 0;
+    this.hurt = 0;
+    this.endlessAnnounced = false;
+    this.selected = null;
+    this.selectedTowerId = null;
+    this.armedSkill = null;
+    for (const s of SKILLS) this.skillCd[s.id] = 0;
+    this.stats = { kills: 0, built: 0, gold: 0, best: 0 };
+    this.state = 'build';
+    this.dayNight.toDay();
+    if (this.hud) this.hud.rebuildForLevel();
+  }
+
+  // 还有没有下一关
+  get nextLevelIndex() {
+    return this.levelIndex + 1 < 5 ? this.levelIndex + 1 : -1;
+  }
+
+  // 中途出关：把这一局停干净，世界留着不动（回舆图再选）
+  abandon() {
+    this.waveActive = false;
+    this.spawnQueue = [];
+    this.enemies.clear();
+    this.projectiles.clear();
+    this.towers.clear();
+    this.selected = null;
+    this.selectedTowerId = null;
+    this.armedSkill = null;
+    this.surge = 0;
+    this.hurt = 0;
+    this.speed = 1;
+    this.state = 'menu';
+    this.dayNight.autoRun = false;
+    this.dayNight.toDay();
   }
 
   cycleSpeed() {

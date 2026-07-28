@@ -130,6 +130,41 @@ export const TOWERS = [
     ],
     upName: ['一阶 · 立轴', '二阶 · 长轴', '三阶 · 通天轴'],
   },
+
+  /* ---------------- 各关专属的发力机关 ---------------- */
+  {
+    id: 'forge', name: '地火炉', el: 'none', kind: 'gen', hotkey: '7',
+    cost: 88, power: -34, range: 0, link: 28, needs: 'open', glyph: '炉',
+    desc: '引地脉之火鼓风推鞲，何处皆可安炉。炎火之山无水可引，全谷机力皆出于此。',
+    up: [
+      { power: -34, link: 28 },
+      { power: -56, link: 31, cost: 80 },
+      { power: -88, link: 35, cost: 168 },
+    ],
+    upName: ['一阶 · 单炉', '二阶 · 连鞲炉', '三阶 · 九龙炉'],
+  },
+  {
+    id: 'tide', name: '潮汐轮', el: 'none', kind: 'gen', hotkey: '7',
+    cost: 76, power: -40, range: 0, link: 32, needs: 'water', glyph: '潮',
+    desc: '架于潮间，一涨一落皆是力。归墟潮信极大，出力冠绝诸关，只是非临海不可立。',
+    up: [
+      { power: -40, link: 32 },
+      { power: -66, link: 35, cost: 72 },
+      { power: -104, link: 40, cost: 155 },
+    ],
+    upName: ['一阶 · 单叶轮', '二阶 · 双叶轮', '三阶 · 八方潮轮'],
+  },
+  {
+    id: 'aether', name: '云枢', el: 'none', kind: 'gen', hotkey: '7',
+    cost: 120, power: -46, range: 0, link: 34, needs: 'open', glyph: '云',
+    desc: '悬圃之上无水无薪，唯以玉枢承云气而转。造价虽高，出力绵长不绝。',
+    up: [
+      { power: -46, link: 34 },
+      { power: -74, link: 38, cost: 110 },
+      { power: -116, link: 43, cost: 235 },
+    ],
+    upName: ['一阶 · 云枢', '二阶 · 双璧枢', '三阶 · 周天枢'],
+  },
 ];
 
 export const TOWER_BY_ID = Object.fromEntries(TOWERS.map(t => [t.id, t]));
@@ -210,6 +245,104 @@ export const ENEMIES = {
     traits: ['shock'],
     desc: '状如牛，苍身而无角，一足，出入水则必风雨，其声如雷。',
   },
+
+  /* ---------------- 二 · 炎火之山 ---------------- */
+  zheng: {
+    id: 'zheng', name: '狰', el: 'fire', hp: 340, speed: 6.6, armor: 2, bounty: 17,
+    scale: 1.28, body: 0xb8341c, accent: 0xffb03c, kind: 'ground',
+    traits: ['ignite'],
+    desc: '状如赤豹，五尾一角，其音如击石。所过之处，草木皆焦。',
+  },
+  qique: {
+    id: 'qique', name: '鬿雀', el: 'fire', hp: 300, speed: 8.4, armor: 1, bounty: 22,
+    scale: 1.14, body: 0xd2691e, accent: 0xffe08a, kind: 'air',
+    desc: '状如鸡而白首，鼠足而虎爪，是食人。掠空而下，不循兽道。',
+  },
+  huoshu: {
+    id: 'huoshu', name: '火鼠', el: 'fire', hp: 190, speed: 9.2, armor: 0, bounty: 11,
+    scale: 0.96, body: 0x8c2b12, accent: 0xff8a3c, kind: 'ground',
+    desc: '生于火中，其毛可织。行疾如火星迸溅，成群则势如燎原。',
+  },
+  zhuyan: {
+    id: 'zhuyan', name: '朱厌', el: 'metal', hp: 8200, speed: 3.4, armor: 13, bounty: 300,
+    scale: 2.62, body: 0xe8e2d4, accent: 0xc0281a, kind: 'ground', boss: true,
+    traits: ['devour', 'shock'],
+    desc: '状如猿，白首赤足，见则大兵。挥臂所及，机括俱碎。',
+  },
+
+  /* ---------------- 三 · 幽都寒渊 ---------------- */
+  zhujian: {
+    id: 'zhujian', name: '诸犍', el: 'earth', hp: 460, speed: 5.2, armor: 4, bounty: 21,
+    scale: 1.42, body: 0x5c6470, accent: 0xa8c8dc, kind: 'ground',
+    desc: '豹身人首，牛耳一目，善吼。行则衔其尾，居则蟠其尾。',
+  },
+  jiao: {
+    id: 'jiao', name: '狡', el: 'wood', hp: 240, speed: 8.8, armor: 0, bounty: 14,
+    scale: 1.08, body: 0x6b7a5e, accent: 0xd8e8a0, kind: 'ground',
+    desc: '状如犬而豹文，其角如牛，其音如吠犬，见则其国大穰。',
+  },
+  hanba: {
+    id: 'hanba', name: '寒鸮', el: 'water', hp: 330, speed: 8.0, armor: 1, bounty: 20,
+    scale: 1.16, body: 0x38566e, accent: 0xbfe8ff, kind: 'air',
+    traits: ['flood'],
+    desc: '玄羽白瞳，翼过处泉眼尽冻。掠空而行，最恨临水之械。',
+  },
+  qiangliang: {
+    id: 'qiangliang', name: '強良', el: 'metal', hp: 9600, speed: 3.0, armor: 15, bounty: 340,
+    scale: 2.78, body: 0x46525e, accent: 0x7fe0ff, kind: 'ground', boss: true,
+    traits: ['shock', 'regen'],
+    desc: '衔蛇操蛇，虎首人身，四蹄长肘。一步一雷，冰原为之震裂。',
+  },
+
+  /* ---------------- 四 · 归墟海眼 ---------------- */
+  lingyu: {
+    id: 'lingyu', name: '陵鱼', el: 'water', hp: 420, speed: 6.0, armor: 2, bounty: 20,
+    scale: 1.30, body: 0x2f6f82, accent: 0x7fe8d8, kind: 'ground',
+    traits: ['aquatic'],
+    desc: '人面手足鱼身，在海中。潮来则随潮而上，登岸如履平地。',
+  },
+  shebishi: {
+    id: 'shebishi', name: '奢比尸', el: 'earth', hp: 780, speed: 4.6, armor: 6, bounty: 32,
+    scale: 1.62, body: 0x6a6250, accent: 0xe8c878, kind: 'ground',
+    traits: ['devour'],
+    desc: '兽身人面大耳，珥两青蛇。张口所向，机括为之停转。',
+  },
+  zhuanyu: {
+    id: 'zhuanyu', name: '鱄鱼', el: 'fire', hp: 360, speed: 8.6, armor: 1, bounty: 24,
+    scale: 1.18, body: 0x9c4a2c, accent: 0xffd07a, kind: 'air',
+    desc: '状如鲋而彘毛，其音如豚，见则天下大旱。振鳍而飞，不循兽道。',
+  },
+  yuqiang: {
+    id: 'yuqiang', name: '禺彊', el: 'water', hp: 11200, speed: 2.8, armor: 16, bounty: 380,
+    scale: 2.86, body: 0x1f4e5c, accent: 0x6fe0e8, kind: 'ground', boss: true,
+    traits: ['flood', 'regen', 'unslowable'],
+    desc: '北海之神，人面鸟身，珥两青蛇，践两青蛇。所至之处，潮涌没膝。',
+  },
+
+  /* ---------------- 五 · 昆仑天阙 ---------------- */
+  tulou: {
+    id: 'tulou', name: '土蝼', el: 'earth', hp: 620, speed: 5.0, armor: 6, bounty: 24,
+    scale: 1.46, body: 0x8a7448, accent: 0xffd88a, kind: 'ground',
+    desc: '状如羊而四角，是食人。昆仑之丘，其兽多此。',
+  },
+  yingzhao: {
+    id: 'yingzhao', name: '英招', el: 'wood', hp: 560, speed: 9.0, armor: 3, bounty: 30,
+    scale: 1.42, body: 0x5e7c52, accent: 0xf0e08a, kind: 'air',
+    traits: ['aura'],
+    desc: '马身而人面，虎文而鸟翼，徇于四海。振翼掠空，同行者皆得其庇。',
+  },
+  luwu: {
+    id: 'luwu', name: '陆吾', el: 'metal', hp: 2400, speed: 4.8, armor: 10, bounty: 78,
+    scale: 1.86, body: 0xc0a460, accent: 0xfff0c8, kind: 'ground',
+    traits: ['aura'],
+    desc: '虎身而九尾，人面而虎爪。司天之九部及帝之囿时。',
+  },
+  kaiming: {
+    id: 'kaiming', name: '开明兽', el: 'earth', hp: 16800, speed: 2.6, armor: 20, bounty: 520,
+    scale: 3.12, body: 0xb89a54, accent: 0xfff2c0, kind: 'ground', boss: true,
+    traits: ['split', 'devour', 'regen', 'unslowable'],
+    desc: '身大类虎而九首，皆人面，东向立昆仑上。九门之守，非其许不得入。',
+  },
 };
 
 /* ---------------------------------------------------------------- 波次 */
@@ -217,7 +350,7 @@ export const ENEMIES = {
 const W = (name, night, groups) => ({ name, night, groups });
 const G = (id, count, gap = 0.9, delay = 0, gate = 2) => ({ id, count, gap, delay, gate });
 
-export const WAVES = [
+const WAVES_QIWU = [
   W('探路之兽', false, [G('huan', 5, 1.4, 0, 0)]),
   W('林中疾影', false, [G('huan', 7, 1.0, 0, 2)]),
   W('土行之属', false, [G('yayu', 5, 1.3, 0, 0), G('huan', 6, 0.8, 3, 1)]),
@@ -244,17 +377,116 @@ export const WAVES = [
   W('烛龙出渊', true, [G('zhulong', 1, 1, 0, 2), G('qiongqi', 6, 1.6, 8, 2), G('taotie', 5, 2.0, 14, 2), G('bifang', 14, 0.6, 4, 2)]),
 ];
 
-// 无尽模式：第 25 波起按公式生成
-export function endlessWave(n) {
-  const pool = ['huan', 'yayu', 'luoyu', 'qitu', 'bifang', 'huashe', 'xiangliu', 'jiuwei', 'taotie', 'dijiang', 'qiongqi'];
-  const k = n - WAVES.length;
+/* ---- 二 · 炎火之山：火属压倒性，须以水阵与寒泉相抗 ---- */
+const WAVES_YANHUO = [
+  W('焦石先驱', false, [G('huoshu', 8, 1.0, 0, 0)]),
+  W('赤沙疾走', false, [G('huoshu', 12, 0.7, 0, 2), G('huan', 6, 1.0, 4, 2)]),
+  W('五尾之狰', false, [G('zheng', 5, 1.4, 0, 2), G('huoshu', 10, 0.7, 3, 2)]),
+  W('白首赤足', true, [G('zheng', 7, 1.2, 0, 2), G('yayu', 8, 1.0, 3, 2)]),
+  W('鬿雀掠空', false, [G('qique', 8, 0.9, 0, 2), G('huoshu', 14, 0.6, 2, 2)]),
+  W('讹火临谷', false, [G('bifang', 8, 1.1, 0, 2), G('zheng', 8, 1.1, 4, 2)]),
+  W('雅丹群行', true, [G('yayu', 12, 0.8, 0, 2), G('qique', 10, 0.8, 4, 2), G('zheng', 6, 1.3, 8, 2)]),
+  W('贪餮啖炉', false, [G('taotie', 3, 2.6, 0, 2), G('huoshu', 18, 0.5, 2, 2)]),
+  W('混沌无面', false, [G('dijiang', 6, 1.5, 0, 2), G('qique', 12, 0.7, 3, 2)]),
+  W('赤焰蔽日', true, [G('bifang', 14, 0.6, 0, 2), G('zheng', 10, 1.0, 4, 2), G('taotie', 4, 2.2, 9, 2)]),
+  W('虎翼入火', false, [G('qiongqi', 5, 1.8, 0, 2), G('huoshu', 20, 0.45, 2, 2)]),
+  W('凶兽 · 朱厌', true, [G('zhuyan', 1, 1, 0, 2), G('zheng', 10, 1.0, 6, 2), G('qique', 12, 0.7, 10, 2)]),
+  W('火山将崩', false, [G('dijiang', 8, 1.3, 0, 2), G('taotie', 6, 2.0, 4, 2), G('qiongqi', 5, 1.8, 8, 2)]),
+  W('炎火尽出', true, [G('zhuyan', 2, 4.0, 0, 2), G('bifang', 16, 0.55, 4, 2), G('zheng', 12, 0.9, 8, 2), G('qique', 14, 0.6, 12, 2)]),
+];
+
+/* ---- 三 · 幽都寒渊：夜战为主，凶兽厚甲高血 ---- */
+const WAVES_YOUDU = [
+  W('冰原之犬', false, [G('jiao', 8, 1.1, 0, 0)]),
+  W('雪中疾影', true, [G('jiao', 12, 0.7, 0, 2), G('huan', 8, 0.9, 3, 2)]),
+  W('一目诸犍', false, [G('zhujian', 6, 1.3, 0, 2), G('jiao', 10, 0.8, 3, 2)]),
+  W('寒鸮临渊', true, [G('hanba', 8, 0.9, 0, 2), G('zhujian', 6, 1.3, 4, 2)]),
+  W('冻河横流', false, [G('huashe', 10, 0.9, 0, 2), G('luoyu', 12, 0.7, 4, 2)]),
+  W('九首之患', true, [G('xiangliu', 5, 1.8, 0, 2), G('jiao', 14, 0.6, 3, 2)]),
+  W('青丘踏雪', false, [G('jiuwei', 5, 1.6, 0, 2), G('zhujian', 10, 1.0, 3, 2), G('hanba', 8, 0.9, 7, 2)]),
+  W('夔鼓震冰', true, [G('kuifu', 2, 3.5, 0, 2), G('zhujian', 10, 1.0, 5, 2), G('hanba', 10, 0.8, 9, 2)]),
+  W('玄冰崩裂', false, [G('taotie', 5, 2.2, 0, 2), G('xiangliu', 6, 1.5, 4, 2)]),
+  W('极夜将临', true, [G('hanba', 16, 0.55, 0, 2), G('jiuwei', 6, 1.4, 4, 2), G('zhujian', 12, 0.9, 8, 2)]),
+  W('穷奇踏霜', false, [G('qiongqi', 6, 1.7, 0, 2), G('jiao', 18, 0.5, 2, 2)]),
+  W('凶兽 · 強良', true, [G('qiangliang', 1, 1, 0, 2), G('kuifu', 1, 1, 8, 2), G('zhujian', 12, 0.9, 5, 2)]),
+  W('幽都倾巢', false, [G('xiangliu', 8, 1.3, 0, 2), G('taotie', 6, 2.0, 4, 2), G('hanba', 14, 0.6, 8, 2)]),
+  W('寒渊之底', true, [G('qiangliang', 2, 4.5, 0, 2), G('qiongqi', 8, 1.4, 5, 2), G('jiuwei', 8, 1.2, 9, 2), G('hanba', 16, 0.5, 12, 2)]),
+];
+
+/* ---- 四 · 归墟海眼：地窄路长，飞兽比例极高 ---- */
+const WAVES_GUIXU = [
+  W('潮头之鱼', false, [G('lingyu', 7, 1.2, 0, 0)]),
+  W('随潮而上', false, [G('lingyu', 12, 0.8, 0, 2), G('luoyu', 10, 0.9, 3, 2)]),
+  W('鱄鱼振鳍', true, [G('zhuanyu', 10, 0.8, 0, 2), G('lingyu', 10, 0.9, 3, 2)]),
+  W('奢比之尸', false, [G('shebishi', 5, 1.6, 0, 2), G('lingyu', 12, 0.8, 3, 2)]),
+  W('大水将至', false, [G('huashe', 12, 0.8, 0, 2), G('zhuanyu', 12, 0.7, 4, 2)]),
+  W('九首缠礁', true, [G('xiangliu', 6, 1.6, 0, 2), G('lingyu', 14, 0.7, 3, 2)]),
+  W('海眼吞舟', false, [G('shebishi', 8, 1.4, 0, 2), G('dijiang', 6, 1.5, 4, 2), G('zhuanyu', 12, 0.7, 8, 2)]),
+  W('虎翼掠海', true, [G('qiongqi', 6, 1.7, 0, 2), G('zhuanyu', 16, 0.55, 2, 2)]),
+  W('贪餮食舟', false, [G('taotie', 6, 2.0, 0, 2), G('lingyu', 16, 0.6, 3, 2)]),
+  W('潮信大作', true, [G('huashe', 16, 0.6, 0, 2), G('shebishi', 10, 1.2, 4, 2), G('xiangliu', 8, 1.3, 9, 2)]),
+  W('鸟身之神', false, [G('yuqiang', 1, 1, 0, 2), G('zhuanyu', 14, 0.6, 6, 2)]),
+  W('万水朝宗', true, [G('xiangliu', 10, 1.2, 0, 2), G('qiongqi', 8, 1.4, 4, 2), G('shebishi', 12, 1.0, 8, 2)]),
+  W('归墟无底', false, [G('yuqiang', 2, 4.5, 0, 2), G('taotie', 8, 1.8, 5, 2), G('zhuanyu', 18, 0.5, 9, 2), G('lingyu', 18, 0.5, 12, 2)]),
+];
+
+/* ---- 五 · 昆仑天阙：可建之地极狭，全是硬仗 ---- */
+const WAVES_KUNLUN = [
+  W('四角土蝼', false, [G('tulou', 8, 1.1, 0, 0)]),
+  W('虎文鸟翼', false, [G('yingzhao', 8, 1.0, 0, 2), G('tulou', 10, 0.9, 3, 2)]),
+  W('九尾陆吾', true, [G('luwu', 4, 2.0, 0, 2), G('tulou', 12, 0.8, 3, 2)]),
+  W('天梯攀援', false, [G('qiongqi', 5, 1.8, 0, 2), G('yingzhao', 10, 0.8, 3, 2)]),
+  W('百神来朝', true, [G('luwu', 6, 1.6, 0, 2), G('jiuwei', 8, 1.2, 4, 2), G('yingzhao', 10, 0.8, 8, 2)]),
+  W('饕餮登台', false, [G('taotie', 8, 1.8, 0, 2), G('tulou', 14, 0.7, 3, 2)]),
+  W('玉阶浴血', true, [G('qiongqi', 8, 1.4, 0, 2), G('luwu', 8, 1.4, 4, 2), G('yingzhao', 12, 0.7, 8, 2)]),
+  W('夔与強良', false, [G('kuifu', 2, 3.5, 0, 2), G('qiangliang', 1, 1, 6, 2), G('tulou', 14, 0.7, 3, 2)]),
+  W('烛龙升天', true, [G('zhulong', 1, 1, 0, 2), G('luwu', 8, 1.4, 6, 2), G('qiongqi', 8, 1.4, 10, 2)]),
+  W('九门将启', false, [G('taotie', 10, 1.6, 0, 2), G('dijiang', 10, 1.1, 4, 2), G('yingzhao', 14, 0.6, 8, 2)]),
+  W('开明兽 · 上', true, [G('kaiming', 1, 1, 0, 2), G('luwu', 10, 1.2, 6, 2), G('tulou', 16, 0.6, 3, 2)]),
+  W('帝之下都', false, [G('qiongqi', 12, 1.1, 0, 2), G('zhulong', 1, 1, 5, 2), G('qiangliang', 2, 4.0, 10, 2)]),
+  W('开明兽 · 终', true, [G('kaiming', 2, 5.0, 0, 2), G('luwu', 12, 1.0, 6, 2), G('qiongqi', 10, 1.2, 10, 2), G('yingzhao', 16, 0.5, 14, 2)]),
+];
+
+// 关卡 id -> 波次表
+export const LEVEL_WAVES = {
+  qiwu: WAVES_QIWU,
+  yanhuo: WAVES_YANHUO,
+  youdu: WAVES_YOUDU,
+  guixu: WAVES_GUIXU,
+  kunlun: WAVES_KUNLUN,
+};
+
+// 各关无尽模式的兽群池
+const ENDLESS_POOL = {
+  qiwu: ['huan', 'yayu', 'luoyu', 'qitu', 'bifang', 'huashe', 'xiangliu', 'jiuwei', 'taotie', 'dijiang', 'qiongqi'],
+  yanhuo: ['huoshu', 'zheng', 'qique', 'bifang', 'yayu', 'taotie', 'dijiang', 'qiongqi'],
+  youdu: ['jiao', 'zhujian', 'hanba', 'huashe', 'xiangliu', 'jiuwei', 'taotie', 'qiongqi'],
+  guixu: ['lingyu', 'zhuanyu', 'shebishi', 'huashe', 'luoyu', 'xiangliu', 'taotie', 'qiongqi'],
+  kunlun: ['tulou', 'yingzhao', 'luwu', 'qiongqi', 'taotie', 'dijiang', 'jiuwei'],
+};
+const ENDLESS_BOSS = {
+  qiwu: ['kuifu', 'zhulong'],
+  yanhuo: ['zhuyan', 'kuifu'],
+  youdu: ['qiangliang', 'kuifu'],
+  guixu: ['yuqiang', 'zhulong'],
+  kunlun: ['kaiming', 'qiangliang'],
+};
+
+export function wavesOf(levelId) { return LEVEL_WAVES[levelId] || WAVES_QIWU; }
+
+// 无尽模式：打完固定波次后按公式生成
+export function endlessWave(n, levelId = 'qiwu') {
+  const table = wavesOf(levelId);
+  const pool = ENDLESS_POOL[levelId] || ENDLESS_POOL.qiwu;
+  const bosses = ENDLESS_BOSS[levelId] || ENDLESS_BOSS.qiwu;
+  const k = n - table.length;
   const groups = [];
   const cnt = 3 + Math.min(3, Math.floor(k / 3));
   for (let i = 0; i < cnt; i++) {
     const id = pool[(k * 3 + i * 5) % pool.length];
     groups.push(G(id, 6 + Math.floor(k * 1.2) + i * 2, 0.5, i * 2.5, 2));
   }
-  if (k % 4 === 3) groups.push(G(k % 8 === 7 ? 'zhulong' : 'kuifu', 1 + Math.floor(k / 8), 3.0, 6, 2));
+  if (k % 4 === 3) groups.push(G(bosses[k % 8 === 7 ? 1 : 0], 1 + Math.floor(k / 8), 3.0, 6, 2));
   return { name: `无尽 · 第 ${k} 潮`, night: k % 2 === 1, groups, endless: true, scale: 1 + k * 0.28 };
 }
 

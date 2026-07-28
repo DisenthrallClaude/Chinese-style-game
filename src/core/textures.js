@@ -43,25 +43,32 @@ export function normalFromCanvas(src, strength = 2.0) {
   const octx = out.getContext('2d');
   const od = octx.createImageData(w, h);
   const lum = new Float32Array(w * h);
-  for (let i = 0; i < w * h; i++) {
-    lum[i] = (sd[i * 4] * 0.299 + sd[i * 4 + 1] * 0.587 + sd[i * 4 + 2] * 0.114) / 255;
+  for (let i = 0, n = w * h; i < n; i++) {
+    lum[i] = (sd[i * 4] * 0.299 + sd[i * 4 + 1] * 0.587 + sd[i * 4 + 2] * 0.114) * (1 / 255);
   }
-  const at = (x, y) => lum[((y + h) % h) * w + ((x + w) % w)];
+  // 行／列的环绕索引预先算好：内层循环里再做取模与闭包调用，
+  // 每张 512² 的图要多跑两百万次，是整个载入过程最烫的一段。
+  const xm = new Int32Array(w), xp = new Int32Array(w);
+  for (let x = 0; x < w; x++) { xm[x] = x === 0 ? w - 1 : x - 1; xp[x] = x === w - 1 ? 0 : x + 1; }
+  const od8 = od.data;
   for (let y = 0; y < h; y++) {
+    const rowT = ((y === 0 ? h - 1 : y - 1)) * w;
+    const rowC = y * w;
+    const rowB = ((y === h - 1 ? 0 : y + 1)) * w;
     for (let x = 0; x < w; x++) {
-      const tl = at(x - 1, y - 1), t = at(x, y - 1), tr = at(x + 1, y - 1);
-      const l = at(x - 1, y), r = at(x + 1, y);
-      const bl = at(x - 1, y + 1), b = at(x, y + 1), br = at(x + 1, y + 1);
+      const xl = xm[x], xr = xp[x];
+      const tl = lum[rowT + xl], t = lum[rowT + x], tr = lum[rowT + xr];
+      const l = lum[rowC + xl], r = lum[rowC + xr];
+      const bl = lum[rowB + xl], b = lum[rowB + x], br = lum[rowB + xr];
       const dx = (tr + 2 * r + br) - (tl + 2 * l + bl);
       const dy = (bl + 2 * b + br) - (tl + 2 * t + tr);
-      let nx = -dx * strength, ny = -dy * strength, nz = 1;
-      const len = Math.hypot(nx, ny, nz);
-      nx /= len; ny /= len; nz /= len;
-      const i = (y * w + x) * 4;
-      od.data[i] = (nx * 0.5 + 0.5) * 255;
-      od.data[i + 1] = (ny * 0.5 + 0.5) * 255;
-      od.data[i + 2] = (nz * 0.5 + 0.5) * 255;
-      od.data[i + 3] = 255;
+      const nx = -dx * strength, ny = -dy * strength;
+      const inv = 1 / Math.sqrt(nx * nx + ny * ny + 1);
+      const i = (rowC + x) * 4;
+      od8[i] = (nx * inv * 0.5 + 0.5) * 255;
+      od8[i + 1] = (ny * inv * 0.5 + 0.5) * 255;
+      od8[i + 2] = (inv * 0.5 + 0.5) * 255;
+      od8[i + 3] = 255;
     }
   }
   octx.putImageData(od, 0, 0);
@@ -273,7 +280,12 @@ function drawRock(size, opts = {}) {
 
 /* -------------------------------------------------------------- 泥土地 */
 function drawSoil(size, opts = {}) {
-  const { base = [138, 116, 88], seed = 51 } = opts;
+  const {
+    base = [138, 116, 88], seed = 51,
+    peb = [150, 146, 136],      // 碎石
+    vein = [84, 102, 52],       // 渗色（默认是草根的绿）
+    veinAmt = 0.47,
+  } = opts;
   const c = mkCanvas(size);
   const ctx = c.getContext('2d');
   const rng = new Rng(seed);
@@ -283,12 +295,137 @@ function drawSoil(size, opts = {}) {
     let v = lerp(0.7, 1.22, n1 * 0.65 + n2 * 0.35);
     let r = base[0] * v, g = base[1] * v, b = base[2] * v;
     // 碎石
-    const peb = noise.tileFbm(x * 8, y * 8, size, size, 2, 14) * 0.5 + 0.5;
-    const isPeb = smoothstep(0.78, 0.9, peb);
-    r = lerp(r, 150, isPeb * 0.6); g = lerp(g, 146, isPeb * 0.6); b = lerp(b, 136, isPeb * 0.6);
-    // 草根
+    const pn = noise.tileFbm(x * 8, y * 8, size, size, 2, 14) * 0.5 + 0.5;
+    const isPeb = smoothstep(0.78, 0.9, pn);
+    r = lerp(r, peb[0], isPeb * 0.6); g = lerp(g, peb[1], isPeb * 0.6); b = lerp(b, peb[2], isPeb * 0.6);
+    // 渗色
     const gr = smoothstep(0.62, 0.92, noise.tileFbm(x * 3.1 + 90, y * 3.1, size, size, 4, 3) * 0.5 + 0.5);
-    r = lerp(r, 84, gr * 0.45); g = lerp(g, 102, gr * 0.5); b = lerp(b, 52, gr * 0.45);
+    r = lerp(r, vein[0], gr * veinAmt); g = lerp(g, vein[1], gr * (veinAmt + 0.03)); b = lerp(b, vein[2], gr * veinAmt);
+    return [clamp(r, 0, 255), clamp(g, 0, 255), clamp(b, 0, 255)];
+  });
+  return c;
+}
+
+/* ---------------------------------------------------------------- 沙 */
+// 风成沙：长波沙纹 + 细砂粒 + 偶见的贝壳／碎石亮点
+function drawSand(size, opts = {}) {
+  const { base = [206, 168, 112], dark = [150, 112, 66], glint = [246, 226, 186], ripple = 26 } = opts;
+  const c = mkCanvas(size);
+  const ctx = c.getContext('2d');
+  px(ctx, size, size, (x, y) => {
+    // 沙纹：一道道平行的波，被噪声推得弯弯曲曲
+    const warp = noise.tileFbm(x * 1.2, y * 1.2, size, size, 4, 2) * size * 0.10;
+    const rip = Math.sin(((y + warp) / size) * ripple * Math.PI * 2) * 0.5 + 0.5;
+    const fine = noise.tileFbm(x * 5.0, y * 5.0, size, size, 4, 6) * 0.5 + 0.5;
+    const coarse = noise.tileFbm(x * 1.6, y * 1.6, size, size, 4, 2.4) * 0.5 + 0.5;
+    let v = lerp(0.80, 1.16, coarse * 0.55 + fine * 0.25 + Math.pow(rip, 1.6) * 0.20);
+    let r = lerp(dark[0], base[0], v) * v;
+    let g = lerp(dark[1], base[1], v) * v;
+    let b = lerp(dark[2], base[2], v) * v;
+    // 砂粒闪光
+    const sp = noise.tileFbm(x * 22, y * 22, size, size, 1, 40) * 0.5 + 0.5;
+    const sparkle = smoothstep(0.86, 0.98, sp);
+    r = lerp(r, glint[0], sparkle * 0.5); g = lerp(g, glint[1], sparkle * 0.5); b = lerp(b, glint[2], sparkle * 0.5);
+    return [clamp(r, 0, 255), clamp(g, 0, 255), clamp(b, 0, 255)];
+  });
+  return c;
+}
+
+/* ---------------------------------------------------------------- 雪 */
+// 积雪：大团起伏 + 风吹出的雪脊 + 冰晶反光
+function drawSnow(size, opts = {}) {
+  const { base = [232, 238, 248], shade = [172, 190, 214], seed = 61 } = opts;
+  const c = mkCanvas(size);
+  const ctx = c.getContext('2d');
+  px(ctx, size, size, (x, y) => {
+    const drift = noise.tileFbm(x * 1.1, y * 1.1, size, size, 5, 2) * 0.5 + 0.5;
+    const grain = noise.tileFbm(x * 6.5, y * 6.5, size, size, 3, 8) * 0.5 + 0.5;
+    // 风脊：被风削出的一道道棱
+    const warp = noise.tileFbm(x * 0.9 + 30, y * 0.9, size, size, 3, 2) * size * 0.16;
+    const ridge = Math.abs(Math.sin(((x + warp) / size) * 9 * Math.PI)) ;
+    let v = lerp(0.86, 1.10, drift * 0.6 + grain * 0.18 + Math.pow(ridge, 2.2) * 0.22);
+    let r = lerp(shade[0], base[0], v) * v;
+    let g = lerp(shade[1], base[1], v) * v;
+    let b = lerp(shade[2], base[2], v) * v;
+    // 冰晶：稀疏的高光点
+    const sp = noise.tileFbm(x * 26 + 5, y * 26, size, size, 1, 48) * 0.5 + 0.5;
+    const cry = smoothstep(0.90, 0.99, sp);
+    r = lerp(r, 255, cry * 0.85); g = lerp(g, 255, cry * 0.85); b = lerp(b, 255, cry * 0.85);
+    return [clamp(r, 0, 255), clamp(g, 0, 255), clamp(b, 0, 255)];
+  });
+  return c;
+}
+
+/* ---------------------------------------------------------------- 冰 */
+// 蓝冰：深浅分层 + 白色气泡 + 龟裂的裂纹
+function drawIce(size, opts = {}) {
+  const { deep = [42, 96, 128], pale = [154, 208, 230], seed = 71 } = opts;
+  const c = mkCanvas(size);
+  const ctx = c.getContext('2d');
+  px(ctx, size, size, (x, y) => {
+    const layer = noise.tileFbm(x * 0.9, y * 2.4, size, size, 5, 2) * 0.5 + 0.5;
+    const grain = noise.tileFbm(x * 4.0, y * 4.0, size, size, 4, 5) * 0.5 + 0.5;
+    let t = clamp(layer * 0.72 + grain * 0.28, 0, 1);
+    let r = lerp(deep[0], pale[0], t);
+    let g = lerp(deep[1], pale[1], t);
+    let b = lerp(deep[2], pale[2], t);
+    // 气泡
+    const bub = noise.tileFbm(x * 13, y * 13, size, size, 2, 22) * 0.5 + 0.5;
+    const isBub = smoothstep(0.80, 0.94, bub);
+    r = lerp(r, 236, isBub * 0.65); g = lerp(g, 246, isBub * 0.65); b = lerp(b, 252, isBub * 0.6);
+    // 裂纹：脊噪声取极值处压暗
+    const cr = Math.abs(noise.tileFbm(x * 2.1 + 12, y * 2.1, size, size, 4, 3));
+    const crack = 1 - smoothstep(0.0, 0.045, cr);
+    r = lerp(r, 226, crack * 0.55); g = lerp(g, 244, crack * 0.55); b = lerp(b, 255, crack * 0.5);
+    return [clamp(r, 0, 255), clamp(g, 0, 255), clamp(b, 0, 255)];
+  });
+  return c;
+}
+
+/* -------------------------------------------------------------- 珊瑚礁 */
+// 潮间带：湿岩底 + 珊瑚斑块 + 海藻
+function drawCoral(size, opts = {}) {
+  const { base = [96, 110, 106], coral = [214, 118, 96], weed = [58, 108, 78], seed = 81 } = opts;
+  const c = mkCanvas(size);
+  const ctx = c.getContext('2d');
+  px(ctx, size, size, (x, y) => {
+    const n1 = noise.tileFbm(x * 2.2, y * 2.2, size, size, 5, 3) * 0.5 + 0.5;
+    let v = lerp(0.74, 1.16, n1);
+    let r = base[0] * v, g = base[1] * v, b = base[2] * v;
+    // 珊瑚团：斑块状，边缘碎
+    const cn = noise.tileFbm(x * 3.4 + 40, y * 3.4, size, size, 4, 4) * 0.5 + 0.5;
+    const isC = smoothstep(0.58, 0.80, cn);
+    const cv = 0.86 + (noise.tileFbm(x * 9, y * 9, size, size, 2, 12) * 0.5 + 0.5) * 0.4;
+    r = lerp(r, coral[0] * cv, isC * 0.85); g = lerp(g, coral[1] * cv, isC * 0.8); b = lerp(b, coral[2] * cv, isC * 0.78);
+    // 海藻：细长的绺
+    const wn = noise.tileFbm(x * 1.4 + 300, y * 5.2, size, size, 4, 3) * 0.5 + 0.5;
+    const isW = smoothstep(0.66, 0.90, wn);
+    r = lerp(r, weed[0], isW * 0.7); g = lerp(g, weed[1], isW * 0.75); b = lerp(b, weed[2], isW * 0.7);
+    return [clamp(r, 0, 255), clamp(g, 0, 255), clamp(b, 0, 255)];
+  });
+  return c;
+}
+
+/* ---------------------------------------------------------------- 玉 */
+// 玉石：半透的底色 + 云絮状的沁色 + 细裂
+function drawJade(size, opts = {}) {
+  const { base = [186, 208, 194], vein = [128, 168, 150], milk = [238, 246, 240], seed = 91 } = opts;
+  const c = mkCanvas(size);
+  const ctx = c.getContext('2d');
+  px(ctx, size, size, (x, y) => {
+    // 域扭曲的絮状纹
+    const wx = x + noise.tileFbm(x * 1.3, y * 1.3, size, size, 4, 2) * size * 0.14;
+    const wy = y + noise.tileFbm(x * 1.3 + 70, y * 1.3 + 70, size, size, 4, 2) * size * 0.14;
+    const cloud = noise.tileFbm(wx * 1.8, wy * 1.8, size, size, 5, 2.6) * 0.5 + 0.5;
+    let t = clamp(cloud, 0, 1);
+    let r = lerp(vein[0], base[0], t), g = lerp(vein[1], base[1], t), b = lerp(vein[2], base[2], t);
+    // 乳白絮
+    const mk = smoothstep(0.62, 0.92, noise.tileFbm(wx * 3.2, wy * 3.2, size, size, 4, 4) * 0.5 + 0.5);
+    r = lerp(r, milk[0], mk * 0.55); g = lerp(g, milk[1], mk * 0.55); b = lerp(b, milk[2], mk * 0.55);
+    // 细裂
+    const cr = Math.abs(noise.tileFbm(x * 2.6 + 9, y * 2.6, size, size, 4, 3.4));
+    const crack = 1 - smoothstep(0.0, 0.030, cr);
+    r = lerp(r, r * 0.80, crack * 0.6); g = lerp(g, g * 0.82, crack * 0.6); b = lerp(b, b * 0.84, crack * 0.6);
     return [clamp(r, 0, 255), clamp(g, 0, 255), clamp(b, 0, 255)];
   });
   return c;
@@ -367,17 +504,18 @@ function drawBronze(size, opts = {}) {
 }
 
 /* -------------------------------------------------------------- 白灰墙 */
-function drawPlaster(size) {
+function drawPlaster(size, opts = {}) {
+  const { base = [170, 164, 150], stainC = [150, 148, 134] } = opts;
   const c = mkCanvas(size);
   const ctx = c.getContext('2d');
   px(ctx, size, size, (x, y) => {
     const n = noise.tileFbm(x * 2.2, y * 2.2, size, size, 5, 3) * 0.5 + 0.5;
     const stain = noise.tileFbm(x * 0.8, y * 1.4, size, size, 4, 1.7) * 0.5 + 0.5;
     let v = lerp(0.86, 1.05, n);
-    let r = 170 * v, g = 164 * v, b = 150 * v;
+    let r = base[0] * v, g = base[1] * v, b = base[2] * v;
     // 雨痕自上而下
     const streak = smoothstep(0.55, 1.0, stain) * smoothstep(0.0, 0.7, y / size);
-    r = lerp(r, 150, streak * 0.45); g = lerp(g, 148, streak * 0.45); b = lerp(b, 134, streak * 0.42);
+    r = lerp(r, stainC[0], streak * 0.45); g = lerp(g, stainC[1], streak * 0.45); b = lerp(b, stainC[2], streak * 0.42);
     const crack = smoothstep(0.975, 1.0, Math.abs(noise.tileFbm(x * 1.4, y * 1.4, size, size, 3, 4)) * 2 + 0.5);
     const k = 1 - crack * 0.55;
     return [r * k, g * k, b * k];
@@ -628,6 +766,48 @@ const builders = {
   latticeIce: () => drawLattice(256, { style: 'ice', seed: 19 }),
   noiseRGBA: () => drawNoiseRGBA(256, 4, 4),
   waterHeight: () => drawWaterHeight(512),
+
+  /* ---- 二 · 炎火之山：赤沙、焦土、赤岩 ---- */
+  sand: () => drawSand(512, {}),
+  soilRed: () => drawSoil(512, {
+    base: [104, 54, 38], seed: 131, peb: [58, 48, 46], vein: [188, 78, 30], veinAmt: 0.42,
+  }),
+  rockRed: () => drawRock(512, { base: [136, 78, 58], seed: 133, strata: 9 }),
+  flagstoneRed: () => drawFlagstone(512, {
+    cells: 8, seed: 137, base: [138, 92, 74], joint: [64, 40, 32],
+  }),
+  plasterRed: () => drawPlaster(512, { base: [178, 118, 84], stainC: [128, 74, 50] }),
+
+  /* ---- 三 · 幽都寒渊：雪、冰、玄岩 ---- */
+  snow: () => drawSnow(512, {}),
+  ice: () => drawIce(512, {}),
+  flagstoneIce: () => drawFlagstone(512, {
+    cells: 9, seed: 141, base: [148, 168, 186], joint: [80, 100, 122],
+  }),
+
+  /* ---- 四 · 归墟海眼：白沙、珊瑚、湿岩 ---- */
+  sandPale: () => drawSand(512, {
+    base: [222, 210, 184], dark: [168, 158, 138], glint: [252, 248, 238], ripple: 18,
+  }),
+  coral: () => drawCoral(512, {}),
+  rockWet: () => drawRock(512, { base: [78, 88, 90], seed: 151, strata: 6 }),
+
+  /* ---- 五 · 昆仑天阙：玉、白岩、玉砖、青瓦 ---- */
+  jadeStone: () => drawJade(512, {}),
+  rockPale: () => drawRock(512, { base: [162, 158, 152], seed: 161, strata: 8 }),
+  flagstoneJade: () => drawFlagstone(512, {
+    cells: 7, seed: 163, base: [176, 194, 182], joint: [104, 128, 118],
+  }),
+  tileJade: () => drawRoofTile(512, { cols: 10, seed: 167, hue: [70, 104, 96] }),
+
+  /* ---- 各关草木 ---- */
+  leafDry: () => drawLeafCluster(256, { seed: 41, color: [118, 86, 44], hi: [186, 148, 78], count: 210 }),
+  leafScorch: () => drawLeafCluster(256, { seed: 47, color: [92, 46, 28], hi: [198, 96, 40], count: 180 }),
+  leafFrost: () => drawLeafCluster(256, { seed: 53, color: [58, 88, 92], hi: [168, 206, 214], count: 300 }),
+  leafPalm: () => drawLeafCluster(256, { seed: 59, color: [52, 108, 68], hi: [140, 196, 108], count: 240 }),
+  leafJade: () => drawLeafCluster(256, { seed: 67, color: [96, 150, 128], hi: [196, 232, 206], count: 280 }),
+  grassDry: () => drawGrassBlades(128, { color: [148, 124, 62], hi: [206, 184, 110] }),
+  grassFrost: () => drawGrassBlades(128, { color: [126, 152, 158], hi: [210, 230, 238] }),
   blob: () => drawSoftBlob(128, { power: 2.6 }),
   blobHot: () => drawSoftBlob(128, { power: 3.4, core: 0.34 }),
   mistPuff: () => drawMistPuff(256),
@@ -638,7 +818,31 @@ export const TEX = {};          // name -> THREE.Texture (sRGB color)
 export const CANVAS = {};       // name -> HTMLCanvasElement
 const derived = new Map();
 
-export function buildTextureNames() { return Object.keys(builders); }
+// 各关专用的贴图。开场只烘「通用 + 第一关」这一份，
+// 其余四关等真的进去了再烘 —— 否则开场要白等四关的料。
+export const LEVEL_TEXTURES = {
+  qiwu: [],
+  yanhuo: ['sand', 'soilRed', 'rockRed', 'flagstoneRed', 'plasterRed', 'leafDry', 'leafScorch', 'grassDry'],
+  youdu: ['snow', 'ice', 'flagstoneIce', 'leafFrost', 'grassFrost'],
+  guixu: ['sandPale', 'coral', 'rockWet', 'leafPalm'],
+  kunlun: ['jadeStone', 'rockPale', 'flagstoneJade', 'tileJade', 'leafJade'],
+};
+const LEVEL_ONLY = new Set(Object.values(LEVEL_TEXTURES).flat());
+
+// 开场要烘的那一份：通用贴图（各关都要用）
+export function buildTextureNames() {
+  return Object.keys(builders).filter(n => !LEVEL_ONLY.has(n));
+}
+
+// 进某一关之前补齐它要的贴图；已经烘过的直接跳过
+export function ensureLevelTextures(levelId) {
+  const list = LEVEL_TEXTURES[levelId] || [];
+  const made = [];
+  for (const n of list) {
+    if (!CANVAS[n]) { buildTexture(n); made.push(n); }
+  }
+  return made;
+}
 
 export function buildTexture(name) {
   if (CANVAS[name]) return TEX[name];

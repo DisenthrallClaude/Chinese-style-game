@@ -1,7 +1,10 @@
 // 营造格 —— 可安放机关的地块，以及地块的高亮显示
 import * as THREE from 'three';
 import { clamp, lerp, smoothstep, Rng } from '../core/noise.js';
-import { distToAnyPath, distToRiver, inFootprint, VALLEY_C, HEART, PATHS } from '../world/layout.js';
+import {
+  distToAnyPath, distToRiver, inFootprint, VALLEY_C, HEART, PATHS, BUILD_R,
+  WATER_Y, WATER_SHEET,
+} from '../world/layout.js';
 
 const slotVert = /* glsl */`
   attribute vec3 aPos;
@@ -82,27 +85,34 @@ export class BuildGrid {
     // 六边形排布，看起来比方格自然
     const step = 5.2;
     const rowH = step * 0.866;
+    // 判据沿用原作：坡度门槛放得比较松，河两岸都摆得下。
+    // 另加一道很宽的高差兜底，只拦真正会悬空半米以上的坎，不做精细筛选。
+    const BASE_R = 2.15;
+    const MAX_RELIEF = 1.30;
     let idx = 0;
-    for (let row = -26; row <= 26; row++) {
+    for (let row = -30; row <= 30; row++) {
       const z = VALLEY_C.z + row * rowH;
       const off = (row & 1) ? step * 0.5 : 0;
-      for (let col = -26; col <= 26; col++) {
+      for (let col = -30; col <= 30; col++) {
         const x = VALLEY_C.x + col * step + off;
         const rr = Math.hypot(x - VALLEY_C.x, z - VALLEY_C.z);
-        if (rr > 112) continue;
+        if (rr > BUILD_R) continue;
         const dPath = distToAnyPath(x, z);
         if (dPath < 4.0 || dPath > 34) continue;
         if (inFootprint(x, z, 1.2)) continue;
         if (Math.hypot(x - HEART.x, z - HEART.z) < 8.5) continue;
-        const y = terrain.heightAt(x, z);
+        // 取渲染面的高度，不是解析高程 —— 塔是摆在画出来的那个面上的
+        const y = terrain.surfaceY(x, z);
         const dRiver = distToRiver(x, z);
-        const nearWater = dRiver < 11.5;
-        if (y < (nearWater ? -1.7 : -1.2)) continue;
+        // 整片的海／云海没有中心线，改用「离水面多高」判断是不是临水格
+        const nearWater = WATER_SHEET ? (y < WATER_Y + 4.2) : (dRiver < 11.5);
+        if (y < WATER_Y + (nearWater ? 0.2 : 0.7)) continue;
         const slope = terrain.slopeAt(x, z, 2.4);
         if (slope > (nearWater ? 1.25 : 0.62)) continue;
+        if (terrain.reliefAt(x, z, BASE_R) > MAX_RELIEF) continue;
         let type = 'land';
         if (nearWater) type = 'water';
-        else if (y > 16) type = 'high';
+        else if (y > terrain.plazaY + 16) type = 'high';
         this.slots.push({ i: idx++, x, y, z, type, tower: null, dPath, dRiver });
       }
     }
@@ -117,6 +127,13 @@ export class BuildGrid {
       if (d < bd) { bd = d; best = s; }
     }
     return best;
+  }
+
+  dispose() {
+    this.mesh.geometry.dispose();
+    this.material.dispose();
+    if (this.mesh.parent) this.mesh.parent.remove(this.mesh);
+    this.slots.length = 0;
   }
 
   setBuildMode(on, canPlace) {

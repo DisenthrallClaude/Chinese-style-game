@@ -1,7 +1,8 @@
 // 界面 —— 建造栏、机关详情、秘术、波次预告
-import { TOWERS, TOWER_BY_ID, ENEMIES, SKILLS, ELEMENTS, WAVES, RULES, endlessWave } from '../game/config.js';
+import { TOWERS, TOWER_BY_ID, ENEMIES, SKILLS, ELEMENTS, RULES, endlessWave } from '../game/config.js';
 import { audio } from '../core/audio.js';
 import { clamp } from '../core/noise.js';
+import { LEVELS } from '../world/levels.js';
 
 const $ = (s) => document.querySelector(s);
 const EL_VAR = { metal: 'var(--el-metal)', wood: 'var(--el-wood)', water: 'var(--el-water)', fire: 'var(--el-fire)', earth: 'var(--el-earth)', none: 'rgba(233,220,190,.5)' };
@@ -141,7 +142,7 @@ export class HUD {
   _buildBuildBar() {
     this.buildBar.innerHTML = '';
     this.cards = {};
-    TOWERS.forEach((t, i) => {
+    this.game.towerList.forEach((t, i) => {
       const el = document.createElement('div');
       el.className = 'bcard';
       el.innerHTML = `
@@ -181,37 +182,186 @@ export class HUD {
 
   _bind() {
     const G = this.game;
-    $('#btnStart').onclick = () => { this.startGame(false); };
-    $('#btnSandbox').onclick = () => { this.startGame(true); };
+    // 第一幕 -> 舆图
+    $('#btnToMap').onclick = () => { audio.init(); audio.click(); this.showMap(); };
+    $('#btnBack').onclick = () => { audio.click(); this.showTitle(); };
+    $('#btnEnter').onclick = () => { this.startLevel(this.pickedLevel, false); };
+    $('#btnSandbox').onclick = () => { this.startLevel(0, true); };
+
     $('#btnRetry').onclick = () => { $('#endScreen').hidden = true; G.restart(); };
+    $('#btnNext').onclick = () => {
+      const n = G.nextLevelIndex;
+      $('#endScreen').hidden = true;
+      if (n >= 0) this.startLevel(n, false);
+    };
+    $('#btnMap').onclick = () => {
+      $('#endScreen').hidden = true;
+      this.hud.hidden = true;
+      $('#startScreen').hidden = false;
+      this.showMap();
+    };
+
     $('#btnWave').onclick = () => { G.startWave(); audio.click(); };
     $('#btnSpeed').onclick = () => { G.cycleSpeed(); audio.click(); };
     $('#btnDayNight').onclick = () => { G.toggleDayNight(); audio.click(); };
     $('#btnCam').onclick = () => { G.rig.reset(); audio.click(); };
+    $('#btnQuit').onclick = () => this.quitToMap();
     $('#tpClose').onclick = () => G.select(null);
     $('#btnUpgrade').onclick = () => G.upgradeSelected();
     $('#btnSell').onclick = () => G.sellSelected();
-    $('#waveMax').textContent = WAVES.length;
+    $('#waveMax').textContent = this.game.waveCount;
+    $('#lvSeal').textContent = this.game.level.seal;
+    $('#lvName').textContent = this.game.level.name;
+
+    this._loadProgress();
+    this._buildLevelGrid();
   }
 
-  startGame(sandbox) {
+  /* ------------------------------------------------ 进度存档 */
+  _loadProgress() {
+    try {
+      const raw = localStorage.getItem('shanhai.cleared');
+      if (raw) this.game.cleared = JSON.parse(raw) || [];
+    } catch (e) { this.game.cleared = []; }
+  }
+  _saveProgress() {
+    try { localStorage.setItem('shanhai.cleared', JSON.stringify(this.game.cleared)); } catch (e) { /* 无痕模式，忽略 */ }
+  }
+  // 五关一律开放，随意挑着打。cleared 仍然记着，只用来盖「守」字印
+  isUnlocked(i) { return true; }
+
+  /* ------------------------------------------------ 舆图 */
+  showTitle() { $('#actMap').hidden = true; $('#actTitle').hidden = false; }
+  showMap() {
+    $('#actTitle').hidden = true;
+    $('#actMap').hidden = false;
+    this._buildLevelGrid();
+  }
+
+  _buildLevelGrid() {
+    const grid = $('#levelGrid');
+    if (!grid) return;
+    if (this.pickedLevel === undefined) this.pickedLevel = 0;
+    const TINT = [
+      'rgba(126,190,120,.26)', 'rgba(228,110,48,.28)', 'rgba(120,190,232,.26)',
+      'rgba(80,206,196,.26)', 'rgba(178,150,246,.26)',
+    ];
+    grid.innerHTML = '';
+    LEVELS.forEach((L, i) => {
+      const un = this.isUnlocked(i);
+      const done = this.game.cleared.includes(i);
+      const el = document.createElement('div');
+      el.className = 'lcard' + (un ? '' : ' locked') + (i === this.pickedLevel ? ' active' : '');
+      el.style.setProperty('--i', i);
+      el.style.setProperty('--tint', TINT[i]);
+      el.innerHTML =
+        `${done ? '<span class="lc-done">守</span>' : ''}` +
+        `<div class="lc-no">第 ${L.numCN} 关</div>` +
+        `<div class="lc-seal">${L.seal}</div>` +
+        `<div class="lc-name">${L.name}</div>` +
+        `<div class="lc-en">${L.en}</div>` +
+        (un ? `<div class="lc-brief">${L.brief}</div>`
+            : `<div class="lc-lock">— 须先守住前一关 —</div>`);
+      if (un) {
+        el.onclick = () => {
+          this.pickedLevel = i;
+          audio.click();
+          this._buildLevelGrid();
+        };
+        el.ondblclick = () => this.startLevel(i, false);
+      }
+      grid.appendChild(el);
+    });
+    const btn = $('#btnEnter');
+    if (btn) btn.disabled = !this.isUnlocked(this.pickedLevel);
+  }
+
+  /* ------------------------------------------------ 开局 */
+  async startLevel(index, sandbox) {
     audio.init(); audio.resume();
+    const G = this.game;
     $('#startScreen').hidden = true;
-    this.hud.hidden = false;
-    this.game.begin();
-    if (sandbox) {
-      this.game.gold = 4000;
-      this.game.dayNight.autoRun = true;
-      this.toast('自由观景 · 时辰自行流转（N 键切昼夜，右键拖拽转视角）');
+    if (index !== G.levelIndex && G.loadLevel) {
+      await G.loadLevel(index);
     } else {
+      G.restart();
+    }
+    this.hud.hidden = false;
+    G.begin();
+    if (sandbox) {
+      G.gold = 4000;
+      G.dayNight.autoRun = true;
+      this.toast('自由观景 · 时辰自行流转（N 键切昼夜，右键拖拽转视角）');
+    } else if (index === 0) {
       this.hints([
         ['先在<b>溪畔</b>架一座「水车」——谷中机关，皆靠机力驱动', 0],
         ['再用「传动枢」把机力<b>接到兽道边</b>，机关须连上网络才会转', 5200],
         ['在兽道旁摆下「连弩机」，然后按 <b>空格</b> 催兵', 10400],
         ['按 <b>L</b> 可随时查看机力网络；点选机关可<b>升阶</b>或拆解', 15600],
       ]);
+    } else {
+      const L = G.level;
+      this.hints([[L.brief, 400], [L.lore, 6000]]);
     }
     this.refreshAll();
+  }
+
+  /* ------------------------------------------------ 出关 */
+  // 交战中要按两下才走，免得手滑把一局点没了
+  quitToMap() {
+    const G = this.game;
+    const btn = $('#btnQuit');
+    if (G.waveActive && !this._quitArmed) {
+      this._quitArmed = true;
+      btn.classList.add('warn');
+      btn.textContent = '确 认';
+      this.toast('交战中 —— 再点一次「确认」出关', 'bad');
+      clearTimeout(this._quitT);
+      this._quitT = setTimeout(() => {
+        this._quitArmed = false;
+        btn.classList.remove('warn');
+        btn.textContent = '出 关';
+      }, 3000);
+      return;
+    }
+    clearTimeout(this._quitT);
+    this._quitArmed = false;
+    btn.classList.remove('warn');
+    btn.textContent = '出 关';
+    audio.click();
+    G.abandon();
+    this.hud.hidden = true;
+    $('#endScreen').hidden = true;
+    $('#towerPanel').hidden = true;
+    $('#startScreen').hidden = false;
+    this.showMap();
+  }
+
+  /* ------------------------------------------------ 换关过场 */
+  showLoading(L) {
+    const box = $('#levelLoad');
+    if (!box) return;
+    $('#llSeal').textContent = L.seal;
+    $('#llNo').textContent = `第 ${L.numCN} 关`;
+    $('#llName').textContent = L.name;
+    $('#llSub').textContent = L.subtitle;
+    $('#llVerse').textContent = L.verse;
+    box.hidden = false;
+    // 重放入场动画
+    box.querySelectorAll('.ll-seal, .ll-no, .ll-name, .ll-sub, .ll-verse').forEach(el => {
+      el.style.animation = 'none'; void el.offsetWidth; el.style.animation = '';
+    });
+    this._loadShownAt = performance.now();
+  }
+  async hideLoading() {
+    // 过场至少停 1.2 秒，太快闪一下反而糊
+    const el = $('#levelLoad');
+    if (!el) return;
+    const wait = Math.max(0, 1200 - (performance.now() - (this._loadShownAt || 0)));
+    await new Promise(r => setTimeout(r, wait));
+    el.style.transition = 'opacity .6s ease';
+    el.style.opacity = '0';
+    setTimeout(() => { el.hidden = true; el.style.opacity = ''; el.style.transition = ''; }, 620);
   }
 
   /* ---------------------------------------------------- 刷新 */
@@ -226,11 +376,23 @@ export class HUD {
 
   refreshBuildBar() {
     const G = this.game;
-    for (const t of TOWERS) {
+    for (const t of G.towerList) {
       const el = this.cards[t.id];
+      if (!el) continue;
       el.classList.toggle('active', G.selectedTowerId === t.id);
       el.classList.toggle('poor', G.gold < t.cost);
     }
+  }
+
+  // 换关：建造栏与关卡角标重建
+  rebuildForLevel() {
+    for (const t of this.game.towerList) if (!this.icons[t.id]) this.icons[t.id] = towerIcon(t);
+    this._buildBuildBar();
+    const L = this.game.level;
+    $('#waveMax').textContent = this.game.waveCount;
+    $('#lvSeal').textContent = L.seal;
+    $('#lvName').textContent = L.name;
+    this.refreshAll();
   }
 
   refreshSpeed() {
@@ -390,17 +552,38 @@ export class HUD {
 
   showEnd(won) {
     const G = this.game;
+    const L = G.level;
+    const next = G.nextLevelIndex;
+    const isLast = next < 0;
+    if (won) this._saveProgress();
+
     $('#endScreen').hidden = false;
     $('#endSeal').textContent = won ? '守' : '陷';
-    $('#endTitle').textContent = won ? '山谷得全' : '山谷失守';
-    $('#endText').innerHTML = won
-      ? '烛龙敛目，众兽退散。谷中机关虽已伤痕累累，社树仍亭亭如盖。<br>此后年年今日，谷民皆以此夜为节。'
-      : '社树倾折，机括俱毁。凶兽自山口涌下，栖梧谷终成传说。<br>《山海经》又添一笔：「有谷曰栖梧，今亡。」';
+    $('#endTitle').textContent = won
+      ? (isLast ? '山海既定' : `${L.name} · 得全`)
+      : `${L.name} · 失守`;
+
+    const winText = {
+      qiwu: '烛龙敛目，众兽退散。谷中机关虽已伤痕累累，社树仍亭亭如盖。<br>然西望大荒，赤光烛天——那是<b>炎火之山</b>。',
+      yanhuo: '火熄沙定，朱厌伏诛。熔炉犹自轰鸣，谷民却已收拾行装。<br>北方黑水之滨，有山终年不化——那是<b>幽都寒渊</b>。',
+      youdu: '冰原重归死寂，強良沉入裂隙。机关的齿轮上结满了霜。<br>东望大海，众水所归而不盈——那是<b>归墟海眼</b>。',
+      guixu: '潮退浪平，禺彊没入大壑。栈桥断了几处，社树却还立着。<br>抬头，云海之上有玉台悬空——那是<b>昆仑天阙</b>。',
+      kunlun: '九首俱寂，开明兽退守其位。五方山海，自此复归其序。<br>《山海经》末页添了一行小字：「有械曰机关，守山海者也。」',
+    }[L.id];
+    const loseText = `社树倾折，机括俱毁。凶兽自山口涌下，${L.name}终成传说。<br>` +
+      `《山海经》又添一笔：「有地曰${L.name}，今亡。」`;
+    $('#endText').innerHTML = won ? winText : loseText;
+
     $('#endStats').innerHTML = `
       <div class="estat"><b>${G.waveIndex}</b><span>抵御波次</span></div>
       <div class="estat"><b>${G.stats.kills}</b><span>斩兽</span></div>
       <div class="estat"><b>${G.stats.built}</b><span>造机关</span></div>
       <div class="estat"><b>${G.heart}</b><span>社树余命</span></div>`;
+
+    const bn = $('#btnNext');
+    bn.hidden = !(won && !isLast);
+    if (!bn.hidden) bn.textContent = `入 · ${LEVELS[next].name}`;
+    $('#btnRetry').textContent = won ? '再 · 守 一 次' : '重 整 旗 鼓';
   }
 
   /* ---------------------------------------------------- 每帧 */

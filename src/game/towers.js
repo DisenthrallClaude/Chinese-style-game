@@ -1,7 +1,7 @@
 // 机关 —— 造型、瞄准、开火、升阶，以及贯通全谷的机力网络
 import * as THREE from 'three';
 import { Rng, clamp, lerp, smoothstep } from '../core/noise.js';
-import { box, cyl, cone, sphere, torus, plane, T, beam } from '../world/geo.js';
+import { box, cyl, cone, sphere, torus, plane, frustum, T, beam } from '../world/geo.js';
 import { gearGeo, ringGeo } from '../world/machinery.js';
 import { getMaterials } from '../world/materials.js';
 import { TOWER_BY_ID, TOWERS, ELEMENTS, RULES } from './config.js';
@@ -213,6 +213,98 @@ function buildModel(id, level, M) {
     turret.add(bm);
     spins.push({ o: bm, axis: 'z', sp: 1.5 });
     muzzle = new THREE.Vector3(0, 3.2, 0);
+  } else if (id === 'forge') {
+    // 地火炉：石砌炉膛 + 风箱 + 熔口。等阶越高，炉口越多
+    push(metal, T(frustum(1.5, 1.5, 1.9, 1.9, 0.42, 0.5), 0, 0.21, 0));
+    push(wood, T(frustum(1.15, 1.15, 1.5, 1.5, 1.5 + lv * 0.18, 0.45), 0, 0.95 + lv * 0.09, 0));
+    // 炉膛口：朝前一个方洞，里面是熔岩
+    const mouth = new THREE.Mesh(box(0.72, 0.62, 0.16, 1.0), M.magma || M.iron);
+    mouth.position.set(0, 0.92, 0.78);
+    turret.add(mouth);
+    // 烟囱
+    push(metal, T(cyl(0.26, 0.34, 1.5 + lv * 0.35, 9, 0.6), -0.42, 2.35 + lv * 0.3, -0.42));
+    push(metal, T(cyl(0.36, 0.30, 0.22, 9, 0.9), -0.42, 3.16 + lv * 0.45, -0.42));
+    // 风箱：随出力鼓动
+    const bellow = new THREE.Mesh(box(0.9, 0.62, 1.25, 0.7), M.woodDark);
+    bellow.position.set(1.05, 0.78, 0);
+    turret.add(bellow);
+    spins.push({ o: bellow, axis: 'x', sp: 0, pump: 0.9 });
+    push(wood, T(box(0.14, 0.14, 1.9, 0.8), 1.05, 1.34, 0.2, 0.22, 0, 0));
+    // 传动轮
+    for (let i = 0; i <= lv; i++) {
+      const gr = new THREE.Mesh(gearGeo(0.44 + i * 0.09, 10 + i * 2, 0.15), i % 2 ? M.iron : M.bronze);
+      gr.position.set(-1.0, 0.68 + i * 0.5, 0.35);
+      turret.add(gr);
+      spins.push({ o: gr, axis: 'z', sp: (i % 2 ? -1 : 1) * (2.2 + i * 0.8) });
+    }
+    muzzle = new THREE.Vector3(0, 1.4, 0);
+  } else if (id === 'tide') {
+    // 潮汐轮：卧式叶轮，随潮起落。轴横在水面上
+    push(metal, T(box(2.4, 0.42, 1.6, 0.6), 0, 0.21, 0));
+    for (const s of [-1, 1]) {
+      push(wood, T(box(0.24, 2.2, 0.24, 0.7), s * 1.0, 1.3, 0, 0, 0, s * 0.10));
+      push(wood, T(box(0.18, 0.18, 1.4, 0.8), s * 1.0, 2.3, 0));
+    }
+    const R = 1.25 + lv * 0.22;
+    const wl = [];
+    for (const side of [-1, 1]) {
+      const rim = ringGeo(R, R * 0.82, 0.12, 22, 0.6); T(rim, 0, 0, side * 0.50); wl.push(rim);
+    }
+    const nb = 8 + lv * 3;
+    for (let i = 0; i < nb; i++) {
+      const a = (i / nb) * Math.PI * 2;
+      // 叶片是弯的：兜得住水
+      const bd = box(0.62, 0.06, 1.05, 0.7);
+      T(bd, Math.cos(a) * (R - 0.30), Math.sin(a) * (R - 0.30), 0, 0, 0, a + 0.75);
+      wl.push(bd);
+      const sp = box(R, 0.075, 0.075, 0.7);
+      T(sp, Math.cos(a) * R / 2, Math.sin(a) * R / 2, 0, 0, 0, a);
+      wl.push(sp);
+    }
+    const wm = new THREE.Mesh(mergeList(wl), M.wood);
+    wm.castShadow = true;
+    wm.position.y = 1.45;
+    turret.add(wm);
+    spins.push({ o: wm, axis: 'z', sp: 0.85 });
+    // 铜轴与齿
+    push(metal, T(cyl(0.14, 0.14, 2.4, 8, 1.0), 0, 1.45, 0, 0, 0, Math.PI / 2));
+    const gr = new THREE.Mesh(gearGeo(0.52 + lv * 0.06, 12, 0.16), M.bronze);
+    gr.position.set(1.15, 1.45, 0);
+    turret.add(gr);
+    spins.push({ o: gr, axis: 'z', sp: -2.2 });
+    muzzle = new THREE.Vector3(0, 1.45, 0);
+  } else if (id === 'aether') {
+    // 云枢：玉柱托起数重同心璧，承云气而转
+    push(metal, T(frustum(1.3, 1.3, 1.7, 1.7, 0.40, 0.5), 0, 0.20, 0));
+    push(wood, T(cyl(0.30, 0.42, 2.5 + lv * 0.3, 10, 0.6), 0, 1.45 + lv * 0.15, 0));
+    // 同心璧：一阶一重，各转各的
+    const rings = 1 + lv;
+    for (let i = 0; i < rings; i++) {
+      const r = 0.95 + i * 0.42;
+      const rg = new THREE.Mesh(new THREE.TorusGeometry(r, 0.075, 8, 34), i % 2 ? M.gold : M.bronze);
+      rg.castShadow = false;
+      const holder = new THREE.Group();
+      holder.add(rg);
+      holder.position.y = 3.0 + lv * 0.3;
+      holder.rotation.set(i === 1 ? Math.PI / 2 : 0, 0, i === 2 ? Math.PI / 3 : 0);
+      turret.add(holder);
+      spins.push({ o: holder, axis: i === 1 ? 'x' : (i === 2 ? 'z' : 'y'), sp: 0.7 + i * 0.55 });
+    }
+    // 枢心
+    const core = new THREE.Mesh(new THREE.IcosahedronGeometry(0.34 + lv * 0.05, 1),
+      new THREE.MeshStandardMaterial({
+        color: 0x2a2440, emissive: new THREE.Color(0xb8a0ff),
+        emissiveIntensity: 1.8, roughness: 0.35, metalness: 0.5,
+      }));
+    core.position.y = 3.0 + lv * 0.3;
+    turret.add(core);
+    spins.push({ o: core, axis: 'y', sp: 0.4 });
+    // 四角承露的小柱
+    for (let i = 0; i < 4; i++) {
+      const a = (i / 4) * Math.PI * 2 + 0.78;
+      push(metal, T(cyl(0.10, 0.13, 1.1, 7, 0.7), Math.cos(a) * 0.95, 0.75, Math.sin(a) * 0.95));
+    }
+    muzzle = new THREE.Vector3(0, 3.0, 0);
   } else {  // relay
     push(wood, T(cyl(0.34, 0.5, 2.4 + lv * 0.4, 10, 0.6), 0, 1.2 + lv * 0.2, 0));
     push(wood, T(box(1.6, 0.16, 0.16, 0.8), 0, 2.2 + lv * 0.4, 0));
@@ -431,6 +523,14 @@ export class PowerLinks {
     this.material.uniforms.uTime.value = t;
     this.material.uniforms.uAlpha.value = alpha;
   }
+  dispose(scene) {
+    if (this.mesh) { this.mesh.geometry.dispose(); this.mesh.material.dispose(); scene.remove(this.mesh); }
+    if (this.shaftGroup) {
+      this.shaftGroup.traverse(o => { if (o.geometry) o.geometry.dispose(); });
+      scene.remove(this.shaftGroup);
+    }
+  }
+
 }
 
 /* ============================================================
@@ -563,6 +663,13 @@ export class TowerManager {
       // 转动件
       const spinRate = (tw.isGen ? 1 : (active ? rateMult : 0.05)) * (tw.isGen ? 1 : 1);
       for (const sp of tw.model.userData.spins) {
+        if (sp.pump !== undefined) {
+          // 风箱：往复鼓动，不是转
+          sp.phase = (sp.phase || 0) + dt * 2.6;
+          sp.o.scale.z = 1 + Math.sin(sp.phase) * 0.22 * sp.pump;
+          sp.o.position.z = Math.sin(sp.phase) * 0.16 * sp.pump;
+          continue;
+        }
         sp.o.rotation[sp.axis] += sp.sp * dt * (tw.isGen ? 1 : Math.max(0.08, spinRate));
       }
       if (tw.model.userData.orb) {
@@ -627,6 +734,14 @@ export class TowerManager {
     this.towers.length = 0;
     this.networkDirty = true;
     this.solveNetwork();
+  }
+
+  // 换关：连机关网络与射程环一并拆掉
+  dispose() {
+    this.clear();
+    if (this.links && this.links.dispose) this.links.dispose(this.scene);
+    if (this.blobs && this.blobs.dispose) this.blobs.dispose(this.scene);
+    if (this.rangeRing && this.rangeRing.parent) this.rangeRing.parent.remove(this.rangeRing);
   }
 }
 

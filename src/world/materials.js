@@ -50,6 +50,45 @@ export function createMaterials() {
   M.cloth = std('clothRed', { normal: 1.0, rough: [0.7, 1.0], normalScale: 0.5, side: THREE.DoubleSide });
   M.clothBlue = std('clothIndigo', { normal: 1.0, rough: [0.7, 1.0], normalScale: 0.5, side: THREE.DoubleSide });
 
+  /* ---- 各关专用 ---- */
+  // 二 · 炎火之山
+  M.plasterRed = std('plasterRed', { normal: 1.2, rough: [0.74, 1.0], normalScale: 0.65 });
+  M.rockRedM = std('rockRed', { normal: 2.3, rough: [0.72, 1.0], normalScale: 1.25 });
+  M.obsidian = std('rockDark', {
+    normal: 1.8, rough: [0.16, 0.44], normalScale: 1.0, metalness: 0.24, color: 0x4a4046,
+  });
+  // 熔岩本身会发光，交给专门的自发光材质
+  M.magma = new THREE.MeshStandardMaterial({
+    map: colorOf('rockDark', 1),
+    color: 0x2a1008,
+    emissive: new THREE.Color(0xff5a12),
+    emissiveIntensity: 1.5,
+    roughness: 0.62, metalness: 0.1,
+  });
+  M.magma.userData = {};
+
+  // 三 · 幽都寒渊
+  M.rockDark = std('rockDark', { normal: 2.2, rough: [0.68, 1.0], normalScale: 1.2 });
+  M.snowM = std('snow', { normal: 1.4, rough: [0.62, 0.92], normalScale: 0.7, color: 0xffffff });
+  M.iceM = new THREE.MeshStandardMaterial({
+    map: colorOf('ice', 1),
+    normalMap: normalOf('ice', 1.5, 1),
+    roughness: 0.18, metalness: 0.0,
+    transparent: true, opacity: 0.82,
+    color: 0xd8f0ff,
+  });
+  M.iceM.userData = {};
+  toonify(M.iceM, 0.20);
+
+  // 四 · 归墟海眼
+  M.rockWetM = std('rockWet', { normal: 2.2, rough: [0.34, 0.72], normalScale: 1.15 });
+  M.coralM = std('coral', { normal: 1.8, rough: [0.58, 0.94], normalScale: 1.0 });
+
+  // 五 · 昆仑天阙
+  M.jadeM = std('jadeStone', { normal: 1.2, rough: [0.20, 0.54], normalScale: 0.7, metalness: 0.05 });
+  M.rockPaleM = std('rockPale', { normal: 2.0, rough: [0.62, 0.96], normalScale: 1.1 });
+  M.tileJade = std('tileJade', { normal: 2.6, rough: [0.28, 0.74], normalScale: 1.25, metalness: 0.10 });
+
   // 灯笼纸：夜间自发光
   M.paper = new THREE.MeshStandardMaterial({
     map: colorOf('paper', 1),

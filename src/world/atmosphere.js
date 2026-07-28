@@ -2,7 +2,7 @@
 import * as THREE from 'three';
 import { Noise, Rng, clamp, lerp, smoothstep } from '../core/noise.js';
 import { colorOf } from '../core/textures.js';
-import { VALLEY_C, distToRiver } from './layout.js';
+import { LEVEL, VALLEY_C, distToRiver } from './layout.js';
 
 
 /* ============================================================
@@ -32,13 +32,20 @@ const partVert = /* glsl */`
       p.z += cos(uTime * sp * 0.7 + ph * 3.0) * 4.2 + cos(uTime * sp * 1.7 + ph) * 1.1;
       p.y += sin(uTime * sp * 0.55 + ph * 2.0) * 1.9;
       a = pow(max(0.0, sin(uTime * (1.3 + sp * 2.0) + ph * 9.0)), 2.0);
-    } else {
+    } else if (uMode < 2.5) {
       // 落英：飘落 + 摆荡
       float ty = mod(uTime * sp * 0.16 + ph, 1.0);
       p.y += rg * (1.0 - ty);
       p.x += sin(uTime * sp * 1.4 + ph * 7.0) * 3.4;
       p.z += cos(uTime * sp * 1.1 + ph * 5.0) * 3.4;
       a = smoothstep(0.0, 0.12, ty) * smoothstep(1.0, 0.82, ty);
+    } else {
+      // 风沙／横雪：主要沿风向平移，边走边缓缓下沉
+      float ty = mod(uTime * sp * 0.22 + ph, 1.0);
+      p.x += (ty - 0.5) * rg * 3.2;
+      p.y += rg * 0.5 * (1.0 - ty) + sin(uTime * sp * 2.2 + ph * 6.0) * 1.4;
+      p.z += sin(uTime * sp * 0.6 + ph * 4.0) * 6.0;
+      a = smoothstep(0.0, 0.10, ty) * smoothstep(1.0, 0.80, ty);
     }
     vAlpha = a * uAlpha;
     vTint = mix(uColorA, uColorB, fract(ph * 3.77));
@@ -173,23 +180,69 @@ class Birds {
 export class Atmosphere {
   constructor(scene) {
     this.scene = scene;
-    this.dust = new ParticleField(scene, {
-      count: 520, mode: 0, area: 108, yBase: 0.5, yRange: 20,
+    this.W = LEVEL.weather;
+    const yb = LEVEL.geo.plazaY || 0;
+    const W = this.W;
+    this.fields = [];
+
+    const add = (key, opts) => {
+      const f = new ParticleField(scene, { ...opts, center: LEVEL.geo.center });
+      this[key] = f;
+      this.fields.push(f);
+      return f;
+    };
+
+    add('dust', {
+      count: 520, mode: 0, area: 108, yBase: yb + 0.5, yRange: 20,
       sizeRange: [0.5, 1.5], speedRange: [0.18, 0.62],
       colorA: 0xfff2d4, colorB: 0xffd9a0, seed: 3, alpha: 0.20,
     });
-    this.fireflies = new ParticleField(scene, {
-      count: 420, mode: 1, area: 96, yBase: 1.2, yRange: 7,
+    add('fireflies', {
+      count: 420, mode: 1, area: 96, yBase: yb + 1.2, yRange: 7,
       sizeRange: [1.6, 4.0], speedRange: [0.3, 1.0],
       colorA: 0xaaff9a, colorB: 0xffe27a, seed: 7, alpha: 0.0,
     });
-    this.petals = new ParticleField(scene, {
-      count: 220, mode: 2, area: 94, yBase: 1.0, yRange: 26,
+    if (W.petals > 0) add('petals', {
+      count: 220, mode: 2, area: 94, yBase: yb + 1.0, yRange: 26,
       sizeRange: [1.0, 2.2], speedRange: [0.35, 0.95],
       colorA: 0xffd9e2, colorB: 0xfff0c0, seed: 11, alpha: 0.5,
       blending: THREE.NormalBlending,
     });
-    this.birds = new Birds(scene, 20);
+    // 飞雪：细密、慢、白，压在整个谷上
+    if (W.snow > 0) add('snow', {
+      count: 1400, mode: 2, area: 130, yBase: yb + 1.0, yRange: 46,
+      sizeRange: [1.1, 2.8], speedRange: [0.5, 1.3],
+      colorA: 0xffffff, colorB: 0xd8e8ff, seed: 23, alpha: 0.7,
+      blending: THREE.NormalBlending,
+    });
+    // 火星：自熔岩沟升起，加色混合
+    if (W.ember > 0) add('ember', {
+      count: 620, mode: 0, area: 100, yBase: yb - 1.0, yRange: 34,
+      sizeRange: [1.0, 3.2], speedRange: [0.5, 1.6],
+      colorA: 0xff7a1e, colorB: 0xffd06a, seed: 29, alpha: 0.55,
+    });
+    // 风沙：横着扫过画面
+    if (W.sand > 0) add('sand', {
+      count: 900, mode: 3, area: 120, yBase: yb + 0.5, yRange: 22,
+      sizeRange: [0.8, 2.4], speedRange: [0.6, 1.5],
+      colorA: 0xe8c890, colorB: 0xc8a066, seed: 31, alpha: 0.30,
+      blending: THREE.NormalBlending,
+    });
+    // 浪沫：贴着水面的一层水汽
+    if (W.spray > 0) add('spray', {
+      count: 520, mode: 0, area: 125, yBase: (LEVEL.geo.waterY || 0) + 0.4, yRange: 9,
+      sizeRange: [2.0, 5.5], speedRange: [0.25, 0.7],
+      colorA: 0xeaf8ff, colorB: 0xb8dcea, seed: 37, alpha: 0.22,
+      blending: THREE.NormalBlending,
+    });
+    // 灵光：昆仑的浮空光点
+    if (W.motes > 0) add('motes', {
+      count: 700, mode: 1, area: 110, yBase: yb + 2.0, yRange: 26,
+      sizeRange: [1.2, 3.4], speedRange: [0.15, 0.6],
+      colorA: 0xd8c0ff, colorB: 0xa8e8ff, seed: 41, alpha: 0.45,
+    });
+
+    this.birds = new Birds(scene, W.birds !== undefined ? W.birds : 20);
     this.smokes = [];
   }
 
@@ -204,11 +257,28 @@ export class Atmosphere {
   }
 
   update(dt, t, dayNight, camera) {
-    const nightT = clamp(dayNight.lanternLevel, 0, 1);
-    this.dust.update(t, lerp(0.10, 0.03, nightT));
-    this.fireflies.update(t, nightT * 0.95);
-    this.petals.update(t, lerp(0.30, 0.10, nightT));
+    const n = clamp(dayNight.lanternLevel, 0, 1);
+    const W = this.W;
+    this.dust.update(t, lerp(0.10, 0.03, n) * (W.dust / 0.10 || 1));
+    this.fireflies.update(t, n * 0.95 * (W.fireflies || 0));
+    if (this.petals) this.petals.update(t, lerp(0.30, 0.10, n) * W.petals);
+    if (this.snow) this.snow.update(t, lerp(0.62, 0.44, n) * W.snow);
+    if (this.ember) this.ember.update(t, lerp(0.42, 0.72, n) * W.ember);
+    if (this.sand) this.sand.update(t, lerp(0.30, 0.16, n) * W.sand);
+    if (this.spray) this.spray.update(t, lerp(0.22, 0.12, n) * W.spray);
+    if (this.motes) this.motes.update(t, lerp(0.28, 0.55, n) * W.motes);
     this.birds.update(t);
-    for (const f of this.smokes) f.update(t, lerp(0.11, 0.05, nightT));
+    for (const f of this.smokes) f.update(t, lerp(0.11, 0.05, n));
+  }
+
+  dispose() {
+    for (const f of [...this.fields, ...this.smokes]) {
+      f.points.geometry.dispose();
+      f.material.dispose();
+      this.scene.remove(f.points);
+    }
+    this.birds.mesh.geometry.dispose();
+    this.birds.mesh.material.dispose();
+    this.scene.remove(this.birds.mesh);
   }
 }

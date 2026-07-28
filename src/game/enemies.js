@@ -350,5 +350,20 @@ export class EnemyManager {
     this.blobs.begin(); this.blobs.end();
   }
 
+  dispose() {
+    this.clear();
+    for (const k of Object.keys(this.pools)) {
+      const pool = this.pools[k];
+      pool.geo.dispose();
+      this.scene.remove(pool.mesh);
+      this.scene.remove(pool.outline);
+    }
+    this.material.dispose();
+    this.outlineMaterial.dispose();
+    this.bars.dispose && this.bars.dispose(this.scene);
+    this.blobs.dispose && this.blobs.dispose(this.scene);
+    this.pools = {};
+  }
+
   get count() { return this.all.filter(e => e.alive).length; }
 }

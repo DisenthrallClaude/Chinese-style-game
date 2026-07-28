@@ -1,7 +1,7 @@
 // 溪流 —— 河面着色、岸边浪花、飞瀑与水沫
 import * as THREE from 'three';
 import { buildTexture, colorOf, normalOf } from '../core/textures.js';
-import { RIVER, WATER_Y } from './layout.js';
+import { LEVEL, RIVER, WATER_Y, WATER_KIND, WATER_SHEET, VALLEY_C } from './layout.js';
 import { Rng, clamp } from '../core/noise.js';
 
 const waterVert = /* glsl */`
@@ -34,6 +34,7 @@ const waterFrag = /* glsl */`
   uniform sampler2D tNoise;
   uniform vec3 uSunDir, uSunColor, uSkyLow, uSkyHigh, uDeep, uShallow, uFoam;
   uniform float uTime, uSunPower, uOpacity, uNightMix;
+  uniform float uEmissive, uFlowScale, uCrack;
   uniform vec3 uCameraP;
 
   #include <common>
@@ -46,8 +47,8 @@ const waterFrag = /* glsl */`
 
   void main() {
     vec2 base = vWorld.xz;
-    vec2 f1 = vec2(-uTime * 0.055, uTime * 0.021);
-    vec2 f2 = vec2(-uTime * 0.033, -uTime * 0.014);
+    vec2 f1 = vec2(-uTime * 0.055, uTime * 0.021) * uFlowScale;
+    vec2 f2 = vec2(-uTime * 0.033, -uTime * 0.014) * uFlowScale;
     vec3 n1 = sampleNormal(base, 0.085, f1);
     vec3 n2 = sampleNormal(base, 0.031, f2);
     vec3 n3 = sampleNormal(base, 0.21, f1 * 2.3);
@@ -92,6 +93,34 @@ const waterFrag = /* glsl */`
     col += uFoam * streak;
 
     float alpha = mix(uOpacity, 0.97, clamp(foam + fres * 0.5, 0.0, 1.0));
+
+    // 熔岩：结壳的黑与裂缝里透出的橙红。裂纹用同一张噪声的脊线取出来。
+    if (uEmissive > 0.001) {
+      // 表面大半是冷却的黑壳，只有裂缝里透出橙红。
+      // 壳给得不够多，整条河就会糊成一块均匀的红。
+      float cn = fnoise * 0.55 + fnoise2 * 0.45;
+      float crust = smoothstep(0.16, 0.56, cn);
+      // 裂纹：噪声的脊线，窄而亮
+      float vein = 1.0 - smoothstep(0.0, 0.055, abs(fnoise2 - 0.5));
+      vein = max(vein, 1.0 - smoothstep(0.0, 0.040, abs(fnoise - 0.46)));
+      vein *= (1.0 - crust * 0.82);
+      // 流动的明暗：让它看着是在淌，不是铺着
+      float flow = 0.7 + 0.3 * sin(base.x * 0.09 + base.y * 0.05 - uTime * 0.6);
+      vec3 crustCol = mix(uDeep * 1.5, uDeep * 0.55, crust);
+      col = mix(crustCol, mix(uShallow, uFoam, pow(vein, 2.0)), clamp(vein * 1.3, 0.0, 1.0));
+      col += uShallow * vein * 1.5 * uEmissive * flow;
+      // 岸边最烫
+      col += uFoam * shoreBand * shoreBand * 0.55 * uEmissive;
+      alpha = 1.0;
+    }
+
+    // 冰面：一层薄薄的裂纹，反射压得比水低
+    if (uCrack > 0.001) {
+      float cr = 1.0 - smoothstep(0.0, 0.05, abs(fnoise - 0.5));
+      col = mix(col, uFoam, cr * 0.45 * uCrack);
+      col = mix(col, uFoam, shoreBand * 0.30 * uCrack);
+    }
+
     gl_FragColor = vec4(col, alpha);
     #include <fog_fragment>
   }
@@ -100,24 +129,105 @@ const waterFrag = /* glsl */`
 export class River {
   constructor(scene, terrain) {
     this.scene = scene;
+    this.kind = WATER_KIND;
+    const W = LEVEL.water;
+    const g = WATER_SHEET ? this._sheetGeometry(terrain, W) : this._channelGeometry(W, terrain);
+
+    const nrm = normalOf('waterHeight', 2.6, 1);
+    nrm.wrapS = nrm.wrapT = THREE.RepeatWrapping;
+    const noiseT = colorOf('noiseRGBA', 1);
+
+    const isLava = this.kind === 'lava';
+    const isIce = this.kind === 'ice';
+
+    this.material = new THREE.ShaderMaterial({
+      uniforms: THREE.UniformsUtils.merge([
+        THREE.UniformsLib.fog,
+        {
+          tNormal: { value: nrm },
+          tNoise: { value: noiseT },
+          uSunDir: { value: new THREE.Vector3(0.3, 0.6, -0.7) },
+          uSunColor: { value: new THREE.Color(1.0, 0.88, 0.7) },
+          uSkyLow: { value: new THREE.Color(0.72, 0.82, 0.9) },
+          uSkyHigh: { value: new THREE.Color(0.24, 0.44, 0.86) },
+          uDeep: { value: new THREE.Color(W.deep) },
+          uShallow: { value: new THREE.Color(W.shallow) },
+          uFoam: { value: new THREE.Color(W.foam) },
+          uTime: { value: 0 },
+          uSunPower: { value: isIce ? 180 : 92 },
+          uOpacity: { value: W.opacity },
+          uNightMix: { value: 0 },
+          uEmissive: { value: isLava ? (W.emissive || 1.0) : 0.0 },
+          uFlowScale: { value: W.flow !== undefined ? W.flow : 1.0 },
+          uCrack: { value: isIce ? 1.0 : 0.0 },
+          uCameraP: { value: new THREE.Vector3() },
+        },
+      ]),
+      vertexShader: waterVert,
+      fragmentShader: waterFrag,
+      transparent: !isLava,
+      fog: true,
+      side: THREE.DoubleSide,
+      depthWrite: isLava,
+      toneMapped: true,
+    });
+    this.material.uniforms.tNormal.value = nrm;
+    this.material.uniforms.tNoise.value = noiseT;
+    this.baseDeep = new THREE.Color(W.deep);
+    this.baseShallow = new THREE.Color(W.shallow);
+    this.baseFoam = new THREE.Color(W.foam);
+
+    this.mesh = new THREE.Mesh(g, this.material);
+    this.mesh.renderOrder = 4;
+    scene.add(this.mesh);
+
+    // 熔岩自己会照亮两岸
+    if (isLava) {
+      this.glow = new THREE.PointLight(0xff5a12, 26, 90, 1.7);
+      this.glow.position.set(VALLEY_C.x, WATER_Y + 3, VALLEY_C.z + 4);
+      scene.add(this.glow);
+    }
+  }
+
+  // ---- 河道：沿中心线放样出一条带 ----
+  // 河宽不是给死的，而是每一道横断面向两侧试探，量到河床爬出水面为止。
+  // 这样水面永远贴着自己的河床，不会插进岸里，也不会在浅段整条埋掉。
+  _channelGeometry(W, terrain) {
     const pts = RIVER.pts;
     const cols = 11;
     const pos = [], shore = [], flow = [], idx = [];
-    const halfBase = 5.4;
+    const halfBase = W.halfWidth;
+    const widths = [];
+    const alive = [];
     for (let i = 0; i < pts.length; i++) {
       const p = pts[i];
       const pa = pts[Math.max(0, i - 1)], pb = pts[Math.min(pts.length - 1, i + 1)];
       let tx = pb[0] - pa[0], tz = pb[1] - pa[1];
       const tl = Math.hypot(tx, tz) || 1; tx /= tl; tz /= tl;
       const nx = -tz, nz = tx;
-      // 宽度随位置起伏
-      const w = halfBase * (1 + Math.sin(i * 0.09) * 0.24 + Math.cos(i * 0.037) * 0.16);
+      // 名义宽度随位置起伏
+      let w = halfBase * (1 + Math.sin(i * 0.09) * 0.24 + Math.cos(i * 0.037) * 0.16);
+      if (terrain) {
+        // 向两侧步进，找河床仍在水面之下的最远处
+        let lim = 0.6;
+        for (let side = -1; side <= 1; side += 2) {
+          let far = 0.6;
+          for (let d = 0.6; d <= w; d += 0.35) {
+            const gx = p[0] + nx * side * d, gz = p[1] + nz * side * d;
+            if (terrain.heightAt(gx, gz) > WATER_Y - 0.10) break;
+            far = d;
+          }
+          lim = Math.max(lim, far);
+        }
+        // 只收窄、不掐断 —— 宽度贴着河床走，整段剔除会把河截成几节
+        w = Math.min(w, lim);
+      }
+      widths.push(w);
+      alive.push(true);   // 整段剔除会把河截成几节，改为一律保留
       for (let j = 0; j < cols; j++) {
         const t = j / (cols - 1);
         const lat = (t - 0.5) * 2;
-        const x = p[0] + nx * lat * w;
-        const z = p[1] + nz * lat * w;
-        pos.push(x, WATER_Y, z);
+        pos.push(p[0] + nx * lat * w, WATER_Y, p[1] + nz * lat * w);
         shore.push(Math.abs(lat));
         flow.push(RIVER.cum[i] || i * 1.6);
       }
@@ -134,65 +244,77 @@ export class River {
     g.setAttribute('aFlow', new THREE.Float32BufferAttribute(flow, 1));
     g.setIndex(idx);
     g.computeVertexNormals();
+    return g;
+  }
 
-    const nrm = normalOf('waterHeight', 2.6, 1);
-    nrm.wrapS = nrm.wrapT = THREE.RepeatWrapping;
-    const noiseT = colorOf('noiseRGBA', 1);
-
-    this.material = new THREE.ShaderMaterial({
-      uniforms: THREE.UniformsUtils.merge([
-        THREE.UniformsLib.fog,
-        {
-          tNormal: { value: nrm },
-          tNoise: { value: noiseT },
-          uSunDir: { value: new THREE.Vector3(0.3, 0.6, -0.7) },
-          uSunColor: { value: new THREE.Color(1.0, 0.88, 0.7) },
-          uSkyLow: { value: new THREE.Color(0.72, 0.82, 0.9) },
-          uSkyHigh: { value: new THREE.Color(0.24, 0.44, 0.86) },
-          uDeep: { value: new THREE.Color(0.055, 0.13, 0.135) },
-          uShallow: { value: new THREE.Color(0.14, 0.30, 0.26) },
-          uFoam: { value: new THREE.Color(0.94, 0.97, 0.98) },
-          uTime: { value: 0 },
-          uSunPower: { value: 92 },
-          uOpacity: { value: 0.86 },
-          uNightMix: { value: 0 },
-          uCameraP: { value: new THREE.Vector3() },
-        },
-      ]),
-      vertexShader: waterVert,
-      fragmentShader: waterFrag,
-      transparent: true,
-      fog: true,
-      side: THREE.DoubleSide,
-      depthWrite: false,
-    });
-    this.material.uniforms.tNormal.value = nrm;
-    this.material.uniforms.tNoise.value = noiseT;
-
-    this.mesh = new THREE.Mesh(g, this.material);
-    this.mesh.renderOrder = 4;
-    scene.add(this.mesh);
+  // ---- 整片的海／云海：aShore 由水深反推，岛缘自然出现浅滩与浪花 ----
+  _sheetGeometry(terrain, W) {
+    const half = W.halfWidth;
+    const n = 160;
+    const pos = [], shore = [], flow = [], idx = [];
+    const DEPTH = 7.0;
+    for (let j = 0; j <= n; j++) {
+      const z = VALLEY_C.z + (j / n - 0.5) * half * 2;
+      for (let i = 0; i <= n; i++) {
+        const x = VALLEY_C.x + (i / n - 0.5) * half * 2;
+        pos.push(x, WATER_Y, z);
+        // 水越浅越接近 1，浪花与浅色就压在岛缘一圈
+        const depth = WATER_Y - terrain.heightAt(x, z);
+        shore.push(clamp(1 - depth / DEPTH, 0, 1));
+        flow.push((x + z) * 0.5);
+      }
+    }
+    const row = n + 1;
+    for (let j = 0; j < n; j++) {
+      for (let i = 0; i < n; i++) {
+        const a = j * row + i, b = a + row;
+        idx.push(a, b, a + 1, b, b + 1, a + 1);
+      }
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    g.setAttribute('aShore', new THREE.Float32BufferAttribute(shore, 1));
+    g.setAttribute('aFlow', new THREE.Float32BufferAttribute(flow, 1));
+    g.setIndex(idx);
+    g.computeVertexNormals();
+    return g;
   }
 
   update(t, camera, dayNight) {
     const u = this.material.uniforms;
     u.uTime.value = t;
     u.uCameraP.value.copy(camera.position);
-    if (dayNight && dayNight.state) {
-      const s = dayNight.state;
-      u.uSunDir.value.copy(dayNight.state.sunEl < -3 ? dayNight.moonWorld : dayNight.sunWorld);
-      // 夜里主光是月，别让水面炸成一条白带
-      const night = clamp(dayNight.lanternLevel, 0, 1);
-      u.uSunColor.value.copy(s.sun)
-        .multiplyScalar(clamp(s.sunI / 5.5, 0.05, 1.05) * (1 - night * 0.80));
-      u.uSkyLow.value.copy(s.hor);
-      u.uSkyHigh.value.copy(s.zen);
-      u.uDeep.value.setRGB(0.055, 0.13, 0.135).lerp(new THREE.Color(0.012, 0.024, 0.055), night);
-      u.uShallow.value.setRGB(0.14, 0.30, 0.26).lerp(new THREE.Color(0.030, 0.055, 0.10), night);
-      u.uFoam.value.setRGB(0.94, 0.97, 0.98).lerp(new THREE.Color(0.13, 0.20, 0.34), night);
+    if (!dayNight || !dayNight.state) return;
+    const s = dayNight.state;
+    u.uSunDir.value.copy(s.sunEl < -3 ? dayNight.moonWorld : dayNight.sunWorld);
+    // 夜里主光是月，别让水面炸成一条白带
+    const night = clamp(dayNight.lanternLevel, 0, 1);
+    u.uSunColor.value.copy(s.sun)
+      .multiplyScalar(clamp(s.sunI / 5.5, 0.05, 1.05) * (1 - night * 0.80));
+    u.uSkyLow.value.copy(s.hor);
+    u.uSkyHigh.value.copy(s.zen);
+    // 熔岩自身发光，入夜反而更亮，不跟着压暗
+    if (this.kind === 'lava') {
+      u.uEmissive.value = 1.0 + night * 0.55;
+      if (this.glow) this.glow.intensity = 22 + night * 16 + Math.sin(t * 1.1) * 3;
+      return;
     }
+    u.uDeep.value.copy(this.baseDeep).lerp(NIGHT_DEEP, night);
+    u.uShallow.value.copy(this.baseShallow).lerp(NIGHT_SHALLOW, night);
+    u.uFoam.value.copy(this.baseFoam).lerp(NIGHT_FOAM, night);
+  }
+
+  dispose() {
+    this.mesh.geometry.dispose();
+    this.material.dispose();
+    this.scene.remove(this.mesh);
+    if (this.glow) this.scene.remove(this.glow);
   }
 }
+
+const NIGHT_DEEP = new THREE.Color(0.012, 0.024, 0.055);
+const NIGHT_SHALLOW = new THREE.Color(0.030, 0.055, 0.10);
+const NIGHT_FOAM = new THREE.Color(0.13, 0.20, 0.34);
 
 /* ============================================================
    飞瀑 / 水帘 —— 挂在水车与渡槽下的落水
