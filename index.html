@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+<title>山海机关录 · Shanhai Mechanica</title>
+<meta name="description" content="以《山海经》与机关术为骨的塔防策略游戏 —— 引水为力，铸械为兵，守五方山海。" />
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%E2%9A%99%EF%B8%8F%3C/text%3E%3C/svg%3E" />
+<link rel="stylesheet" href="styles/ui.css" />
+<script type="importmap">
+{
+  "imports": {
+    "three": "./vendor/three/three.module.js",
+    "three/addons/": "./vendor/three/addons/"
+  }
+}
+</script>
+</head>
+<body>
+
+<div id="viewport"></div>
+
+<!-- ===================== 载入 ===================== -->
+<div id="loader">
+  <!-- 墨：三层不同速度的水墨在背后洇开 -->
+  <div class="ink-field">
+    <i class="ink ink-1"></i><i class="ink ink-2"></i><i class="ink ink-3"></i>
+  </div>
+
+  <div class="loader-core">
+    <!-- 机关齿轮组：齿数、节圆、转速比、啮合相位都是算出来的；
+         每枚轮子由多层薄片沿 Z 轴叠出真实厚度，整组挂在一块倾斜的 3D 舞台上 -->
+    <div class="gear-rig">
+      <div class="gear-stage" id="gearStage" aria-label="机关运转中"></div>
+    </div>
+    <div class="loader-verse">「引水为力，铸械为兵，守此一谷山川。」</div>
+  </div>
+</div>
+
+<!-- ===================== 开场 ===================== -->
+<div id="startScreen" hidden>
+  <div class="ink-field start-ink">
+    <i class="ink ink-1"></i><i class="ink ink-2"></i>
+  </div>
+
+  <!-- 卷轴：上下两根轴 + 中间展开的绢面 -->
+  <div class="scroll-wrap">
+    <div class="scroll-rod rod-top"></div>
+    <div class="scroll-rod rod-bot"></div>
+
+    <div class="scroll-face">
+      <!-- 金线描边：SVG 逐笔画出来 -->
+      <svg class="frame-svg" viewBox="0 0 1000 620" preserveAspectRatio="none" aria-hidden="true">
+        <path class="frame-line" d="M14,14 H986 V606 H14 Z" />
+        <path class="frame-line frame-inner" d="M26,26 H974 V594 H26 Z" />
+      </svg>
+      <span class="corner c-tl"></span><span class="corner c-tr"></span>
+      <span class="corner c-bl"></span><span class="corner c-br"></span>
+
+      <!-- ---- 第一幕：题名 ---- -->
+      <section class="act act-title" id="actTitle">
+        <div class="start-mark">機</div>
+        <h1 class="start-title">
+          <b style="--i:0">山</b><b style="--i:1">海</b><b style="--i:2">机</b><b style="--i:3">关</b><b style="--i:4">录</b>
+        </h1>
+        <div class="start-sub">SHANHAI&nbsp;MECHANICA　·　五方山海，机关为守</div>
+        <p class="start-lead">
+          昆仑之墟东南三百里，有谷曰<b>栖梧</b>。谷民世代以机关术营生，引溪为力，驱轮为兵。<br />
+          然《山海经》所载凶兽破封而出，自山口奔涌而下——自栖梧一谷，直至<b>昆仑天阙</b>。
+        </p>
+        <div class="start-cards">
+          <div class="scard"><span class="sc-no">壹</span><h3>引水生力</h3><p>水车、风车吐纳<b>机力</b>，经传动枢结成机关网络。断网即停机。</p></div>
+          <div class="scard"><span class="sc-no">贰</span><h3>五行六气</h3><p>金木水火土之外，另有<b>雷风毒蛊暗空</b>六气。十一属环环相制，对症下药可打出<b>近两倍</b>伤害。</p></div>
+          <div class="scard"><span class="sc-no">叁</span><h3>一方一地脉</h3><p>五关的路网、屋舍形制、可用机关与地脉加成<b>各不相同</b>。</p></div>
+        </div>
+        <div class="start-actions">
+          <button id="btnToMap" class="btn btn-primary">开 · 启 机 关</button>
+          <button id="btnSandbox" class="btn">观 · 山 河</button>
+        </div>
+        <div class="start-keys">
+          <span><kbd>左键拖拽</kbd> 抓地平移</span>
+          <span><kbd>右键拖拽</kbd> 转视角</span>
+          <span><kbd>滚轮</kbd> 对准光标推拉</span>
+          <span><kbd>1-9</kbd> 选机关</span>
+          <span><kbd>空格</kbd> 催兵/加速</span>
+        </div>
+      </section>
+
+      <!-- ---- 第二幕：舆图选关 ---- -->
+      <section class="act act-map" id="actMap" hidden>
+        <div class="map-head">
+          <div class="map-eyebrow">山 海 舆 图</div>
+          <h2 class="map-title">择 一 方 山 海</h2>
+          <p class="map-note">五关地脉各异，凶兽与机关皆不相同。五方山海俱已开启，任择一方而入。</p>
+        </div>
+        <div class="level-grid" id="levelGrid"></div>
+        <div class="start-actions map-actions">
+          <button id="btnBack" class="btn">返 · 回</button>
+          <button id="btnEnter" class="btn btn-primary">入 · 此 山 海</button>
+        </div>
+      </section>
+    </div>
+  </div>
+</div>
+
+<!-- ===================== 换关载入 ===================== -->
+<div id="levelLoad" hidden>
+  <div class="ll-inner">
+    <div class="ll-seal" id="llSeal">梧</div>
+    <div class="ll-no" id="llNo">第 一 关</div>
+    <h2 class="ll-name" id="llName">栖梧谷</h2>
+    <div class="ll-sub" id="llSub"></div>
+    <div class="ll-verse" id="llVerse"></div>
+    <div class="ll-bar"><i></i></div>
+  </div>
+</div>
+
+<!-- ===================== 战斗 HUD ===================== -->
+<div id="hud" hidden>
+
+  <!-- 左上：波次与时辰 -->
+  <div class="panel panel-tl" id="statusPanel">
+    <div class="wave-block">
+      <div class="wave-label">波次</div>
+      <div class="wave-num"><span id="waveNum">0</span><small>/<span id="waveMax">24</span></small></div>
+    </div>
+    <div class="status-divider"></div>
+    <div class="status-lines">
+      <div class="stat-row"><span class="ico ico-heart"></span><div class="bar bar-heart"><i id="barHeart"></i></div><b id="txtHeart">20</b></div>
+      <div class="stat-row"><span class="ico ico-power"></span><div class="bar bar-power"><i id="barPower"></i></div><b id="txtPower">0/0</b></div>
+      <div class="stat-row time-row"><span class="ico ico-time"></span><span id="txtTime">辰时</span><span class="spacer"></span><span id="txtFps" class="fps">60</span></div>
+    </div>
+  </div>
+
+  <!-- 中上：当前关卡 -->
+  <div class="level-tag" id="levelTag"><b id="lvSeal">梧</b><span id="lvName">栖梧谷</span></div>
+
+  <!-- 右上：资源 + 波次预告 -->
+  <div class="panel panel-tr" id="resPanel">
+    <div class="res-line"><span class="coin"></span><b id="txtGold">0</b><em>灵石</em></div>
+    <div class="next-wave" id="nextWave">
+      <div class="nw-title">下一波 · <span id="nwName">—</span></div>
+      <div class="nw-list" id="nwList"></div>
+    </div>
+  </div>
+
+  <!-- 中上：提示条 -->
+  <div id="toast"></div>
+  <div id="waveBanner"><div class="wb-inner"><span class="wb-num"></span><span class="wb-name"></span></div></div>
+
+  <!-- 右侧：选中机关详情 -->
+  <div class="panel panel-right" id="towerPanel" hidden>
+    <div class="tp-head">
+      <div class="tp-icon" id="tpIcon"></div>
+      <div>
+        <div class="tp-name" id="tpName">—</div>
+        <div class="tp-lv" id="tpLv">一阶</div>
+      </div>
+      <button class="tp-close" id="tpClose">×</button>
+    </div>
+    <div class="tp-stats" id="tpStats"></div>
+    <div class="tp-actions">
+      <button class="btn btn-up" id="btnUpgrade">升阶 <b id="upCost">0</b></button>
+      <button class="btn btn-sell" id="btnSell">拆解 <b id="sellVal">0</b></button>
+    </div>
+  </div>
+
+  <!-- 底部：建造栏 -->
+  <div id="buildBar"></div>
+
+  <!-- 底部右：秘术 + 控制 -->
+  <div id="skillBar"></div>
+  <div id="ctrlBar">
+    <button class="cbtn" id="btnSpeed" title="加速 (空格)">×1</button>
+    <button class="cbtn" id="btnDayNight" title="昼夜切换 (N)">☀</button>
+    <button class="cbtn" id="btnCam" title="视角复位 (R)">◎</button>
+    <button class="cbtn" id="btnQuit" title="出关 · 回舆图 (Esc 长按/点此)">出 关</button>
+    <button class="cbtn" id="btnWave" title="催兵 (空格)">催 兵</button>
+  </div>
+
+  <!-- 悬浮信息 -->
+  <div id="tip" hidden></div>
+</div>
+
+<!-- ===================== 结算 ===================== -->
+<div id="endScreen" hidden>
+  <div class="end-inner">
+    <div class="end-seal" id="endSeal">終</div>
+    <h1 id="endTitle">山谷失守</h1>
+    <p id="endText"></p>
+    <div class="end-stats" id="endStats"></div>
+    <div class="start-actions">
+      <button id="btnNext" class="btn btn-primary" hidden>下 · 一 关</button>
+      <button id="btnRetry" class="btn">重 整 旗 鼓</button>
+      <button id="btnMap" class="btn">回 · 舆 图</button>
+    </div>
+  </div>
+</div>
+
+<script type="module" src="src/main.js"></script>
+</body>
+</html>
