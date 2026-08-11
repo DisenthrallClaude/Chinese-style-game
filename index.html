@@ -28,8 +28,8 @@
   </div>
 
   <div class="loader-core">
-    <!-- 机关齿轮组：齿数、节圆、转速比都是算出来的，真的在啮合。
-         每一枚齿轮由若干层轮廓沿轴向叠出厚度，整组再后仰放进 3D 场景里。 -->
+    <!-- 机关齿轮组：齿数、节圆、转速比、啮合相位都是算出来的；
+         每枚轮子由多层薄片沿 Z 轴叠出真实厚度，整组挂在一块倾斜的 3D 舞台上 -->
     <div class="gear-rig">
       <div class="gear-stage" id="gearStage" aria-label="机关运转中"></div>
     </div>
@@ -70,8 +70,8 @@
         </p>
         <div class="start-cards">
           <div class="scard"><span class="sc-no">壹</span><h3>引水生力</h3><p>水车、风车吐纳<b>机力</b>，经传动枢结成机关网络。断网即停机。</p></div>
-          <div class="scard"><span class="sc-no">贰</span><h3>五行相克</h3><p>金木水火土环环相制，对症下药可打出<b>近两倍</b>伤害。</p></div>
-          <div class="scard"><span class="sc-no">叁</span><h3>昼夜轮转</h3><p>夜战凶兽更悍，然灯火通明处，机关<b>射速加成</b>。</p></div>
+          <div class="scard"><span class="sc-no">贰</span><h3>五行六气</h3><p>金木水火土之外，另有<b>雷风毒蛊暗空</b>六气。十一属环环相制，对症下药可打出<b>近两倍</b>伤害。</p></div>
+          <div class="scard"><span class="sc-no">叁</span><h3>一方一地脉</h3><p>五关的路网、屋舍形制、可用机关与地脉加成<b>各不相同</b>。</p></div>
         </div>
         <div class="start-actions">
           <button id="btnToMap" class="btn btn-primary">开 · 启 机 关</button>
@@ -141,7 +141,6 @@
     <div class="next-wave" id="nextWave">
       <div class="nw-title">下一波 · <span id="nwName">—</span></div>
       <div class="nw-list" id="nwList"></div>
-      <div class="nw-advice" id="nwAdvice"></div>
     </div>
   </div>
 

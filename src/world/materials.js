@@ -69,7 +69,8 @@ export function createMaterials() {
 
   // 三 · 幽都寒渊
   M.rockDark = std('rockDark', { normal: 2.2, rough: [0.68, 1.0], normalScale: 1.2 });
-  M.snowM = std('snow', { normal: 1.4, rough: [0.62, 0.92], normalScale: 0.7, color: 0xffffff });
+  // 纯白的雪在幽都那关会整片过曝；压一点冷灰，明暗层次才留得住
+  M.snowM = std('snow', { normal: 1.4, rough: [0.62, 0.92], normalScale: 0.7, color: 0xd8e2ee });
   M.iceM = new THREE.MeshStandardMaterial({
     map: colorOf('ice', 1),
     normalMap: normalOf('ice', 1.5, 1),

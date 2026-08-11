@@ -219,11 +219,28 @@ export class River {
           }
           lim = Math.max(lim, far);
         }
-        // 只收窄、不掐断 —— 宽度贴着河床走，整段剔除会把河截成几节
-        w = Math.min(w, lim);
+        // 只收窄、不掐断 —— 宽度贴着河床走，整段剔除会把河截成几节。
+        // 再给一个下限：桥下那一小段河床本来就被抬起来了，探到的宽度会
+        // 掉到几乎为零；照单全收的话，整条河（炎火之山是整条熔岩）就在
+        // 桥那儿断成两截。留住三成宽度，桥身自会把它盖住。
+        w = Math.min(w, Math.max(lim, w * 0.30));
       }
       widths.push(w);
       alive.push(true);   // 整段剔除会把河截成几节，改为一律保留
+    }
+    // 沿河做一次宽度平滑：单个断面被桥或台基掐一下，不该让整条河出现一个尖角
+    const sw = widths.slice();
+    for (let i = 0; i < widths.length; i++) {
+      const a = widths[Math.max(0, i - 1)], b = widths[i], c = widths[Math.min(widths.length - 1, i + 1)];
+      sw[i] = Math.max(b, (a + c) * 0.5 * 0.82);
+    }
+    for (let i = 0; i < pts.length; i++) {
+      const p = pts[i];
+      const pa = pts[Math.max(0, i - 1)], pb = pts[Math.min(pts.length - 1, i + 1)];
+      let tx = pb[0] - pa[0], tz = pb[1] - pa[1];
+      const tl = Math.hypot(tx, tz) || 1; tx /= tl; tz /= tl;
+      const nx = -tz, nz = tx;
+      const w = sw[i];
       for (let j = 0; j < cols; j++) {
         const t = j / (cols - 1);
         const lat = (t - 0.5) * 2;

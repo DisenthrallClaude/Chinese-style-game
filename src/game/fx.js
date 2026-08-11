@@ -1,7 +1,7 @@
 // 特效 —— 火星、冲击环、雷弧、飘字，全部走 GPU，主循环只写缓冲
 import * as THREE from 'three';
 import { Rng, clamp, lerp } from '../core/noise.js';
-import { buildTexture } from '../core/textures.js';
+import { buildTexture, colorOf } from '../core/textures.js';
 
 /* ============================================================
    火星 / 碎屑 / 烟
@@ -194,6 +194,112 @@ export class Rings {
     this.mat4.needsUpdate = true; this.aRing.needsUpdate = true; this.aTint.needsUpdate = true;
   }
   update(t) { this.time = t; this.material.uniforms.uTime.value = t; }
+}
+
+/* ============================================================
+   驻留领域 —— 瘴云、影池这类「铺在地上待一会儿」的东西
+   ------------------------------------------------------------
+   一张贴地的圆盘，里面用两层错速的噪声搅出翻滚感；
+   边缘按半径羽化，中心留一点空，看着才像一团气而不是一块饼。
+   ============================================================ */
+const fieldVert = /* glsl */`
+  attribute vec4 aField;   // x: 出生 y: 寿命 z: 半径 w: 种子
+  attribute vec4 aTint;    // rgb + 强度
+  varying vec2 vUv;
+  varying vec4 vTint;
+  varying float vT;
+  varying float vSeed;
+  uniform float uTime;
+  void main() {
+    float age = uTime - aField.x;
+    float t = age / max(0.0001, aField.y);
+    vT = t; vUv = uv; vTint = aTint; vSeed = aField.w;
+    if (t < 0.0 || t > 1.0) { gl_Position = vec4(2.0,2.0,2.0,1.0); return; }
+    // 落地时涨开，散时略微再摊一点
+    float grow = smoothstep(0.0, 0.14, t) * (1.0 + t * 0.12);
+    vec3 p = position * aField.z * grow;
+    gl_Position = projectionMatrix * modelViewMatrix * instanceMatrix * vec4(p, 1.0);
+  }
+`;
+const fieldFrag = /* glsl */`
+  precision highp float;
+  varying vec2 vUv;
+  varying vec4 vTint;
+  varying float vT;
+  varying float vSeed;
+  uniform float uTime;
+  uniform sampler2D tNoise;
+  void main() {
+    vec2 c = vUv - 0.5;
+    float d = length(c) * 2.0;
+    if (d > 1.0) discard;
+    // 两层错速噪声：一层慢慢转，一层往外漂
+    float ang = atan(c.y, c.x);
+    vec2 uv1 = vec2(ang * 0.16 + uTime * 0.03, d * 0.7 - uTime * 0.05) + vSeed;
+    vec2 uv2 = c * 1.4 + vec2(uTime * 0.02, -uTime * 0.035) + vSeed * 0.7;
+    float n = texture2D(tNoise, uv1).r * 0.55 + texture2D(tNoise, uv2).g * 0.45;
+    // 边缘羽化 + 中心稍薄
+    float edge = smoothstep(1.0, 0.62, d) * (0.55 + 0.45 * smoothstep(0.06, 0.42, d));
+    float body = smoothstep(0.30, 0.72, n) * 0.85 + 0.15;
+    // 起散两头淡
+    float fade = smoothstep(0.0, 0.12, vT) * smoothstep(1.0, 0.68, vT);
+    float a = edge * body * fade * vTint.a;
+    if (a < 0.006) discard;
+    // 浓处更亮，薄处只剩底色
+    vec3 col = vTint.rgb * (0.55 + body * 1.05);
+    gl_FragColor = vec4(col, a);
+  }
+`;
+
+export class Fields {
+  constructor(scene, max = 40) {
+    const base = new THREE.PlaneGeometry(2, 2, 1, 1);
+    base.rotateX(-Math.PI / 2);
+    const geo = new THREE.InstancedBufferGeometry();
+    geo.index = base.index;
+    geo.attributes.position = base.attributes.position;
+    geo.attributes.uv = base.attributes.uv;
+    this.mat4 = new THREE.InstancedBufferAttribute(new Float32Array(max * 16), 16);
+    this.aField = new THREE.InstancedBufferAttribute(new Float32Array(max * 4), 4);
+    this.aTint = new THREE.InstancedBufferAttribute(new Float32Array(max * 4), 4);
+    geo.setAttribute('instanceMatrix', this.mat4);
+    geo.setAttribute('aField', this.aField);
+    geo.setAttribute('aTint', this.aTint);
+    geo.instanceCount = max;
+    this.geo = geo;
+    this.material = new THREE.ShaderMaterial({
+      uniforms: { uTime: { value: 0 }, tNoise: { value: colorOf('noiseRGBA', 1) } },
+      vertexShader: fieldVert.replace('attribute vec4 aField;', 'attribute vec4 aField;\nattribute mat4 instanceMatrix;'),
+      fragmentShader: fieldFrag,
+      transparent: true, depthWrite: false, blending: THREE.NormalBlending,
+      side: THREE.DoubleSide,
+    });
+    this.mesh = new THREE.Mesh(geo, this.material);
+    this.mesh.frustumCulled = false;
+    this.mesh.renderOrder = 11;
+    scene.add(this.mesh);
+    this.max = max; this.head = 0; this.time = 0;
+    this._m = new THREE.Matrix4();
+    this._c = new THREE.Color();
+    for (let i = 0; i < max; i++) this.aField.array[i * 4 + 1] = -1;
+  }
+  spawn(x, y, z, r, life, color, alpha = 1) {
+    const k = this.head; this.head = (this.head + 1) % this.max;
+    this._m.makeTranslation(x, y, z);
+    this.mat4.array.set(this._m.elements, k * 16);
+    const a = this.aField.array;
+    a[k * 4] = this.time; a[k * 4 + 1] = life; a[k * 4 + 2] = r; a[k * 4 + 3] = (k * 0.37) % 1;
+    const c = this._c.set(color);
+    const tt = this.aTint.array;
+    tt[k * 4] = c.r; tt[k * 4 + 1] = c.g; tt[k * 4 + 2] = c.b; tt[k * 4 + 3] = alpha;
+    this.mat4.needsUpdate = true; this.aField.needsUpdate = true; this.aTint.needsUpdate = true;
+    return k;
+  }
+  update(t) { this.time = t; this.material.uniforms.uTime.value = t; }
+  dispose(scene) {
+    this.geo.dispose(); this.material.dispose();
+    if (scene) scene.remove(this.mesh);
+  }
 }
 
 /* ============================================================

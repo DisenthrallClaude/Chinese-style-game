@@ -55,23 +55,36 @@ function causeway(x, z, H, o = {}) {
   return { t, y };
 }
 
-// 桥头引道。真正的桥面不再夯进地形里 —— 那样等于在河上垒了一道土坝，
-// 水（和熔岩）会被生生截断，看起来就是「桥底下堵着一堆土」。
-// 地形只负责把两岸的桥头收平到差不多的高度，桥身与桥面另立一份高程
-// （village 架桥时登记 addDeck，凶兽走 walkY）。桥拱底下照旧是河。
-function bridgeApron(h, x, z, H, B) {
+// 石拱桥的桥面高程。addArchBridge 画出来的桥面是
+//   y + deckY + sin(PI * t) * rise，t 沿桥跨从 0 到 1，河心处 t = 0.5。
+// 这里把兽道所在的那条窄带按同一条拱线抬起来，凶兽就走在桥面上，
+// 而不是从桥拱底下穿过去。
+//
+// 抬起来的带子必须比桥身**窄**。以前羽化给了 4.5 米，土坡从桥两侧漫出来
+// 一大截，看着就是一道土埂上摆了两排栏杆 —— 河（炎火之山是熔岩）也在那儿
+// 被生生截断。现在收到 DECK_FEATHER，再由 village.js 把桥面加宽到把它整个
+// 盖住，土就再也露不出来了。
+const DECK_FEATHER = 1.1;
+
+function bridgeDeck(h, x, z, H, B) {
   if (!B) return h;
   const dP = H.dPath(x, z);
-  if (dP > B.halfW + 7) return h;
+  if (dP > B.halfW + DECK_FEATHER) return h;
   const dR = H.dRiver(x, z);
   const half = B.span * 0.5;
-  // 只动桥头之外那一小段：河面上一寸土都不许添
-  if (dR < half * 0.94 || dR > half + 13) return h;
-  const w = 1 - H.smoothstep(B.halfW + 1.0, B.halfW + 7, dP);
-  const e = (1 - H.smoothstep(half + 2.5, half + 13, dR)) * H.smoothstep(half * 0.94, half + 1.5, dR);
+  if (dR > half + 6) return h;
+  // 沿桥跨的参数：河心 0.5，桥头 0
+  const t = Math.max(0, 0.5 - dR / B.span);
+  const deck = B.y + Math.sin(Math.PI * t) * B.rise;
+  // 只抬兽道那一条窄带，两侧留给水
+  const w = 1 - H.smoothstep(B.halfW, B.halfW + DECK_FEATHER, dP);
+  // 桥头之外平顺地接回地面
+  const e = 1 - H.smoothstep(half, half + 6, dR);
   const k = w * e;
-  return k > 0 ? H.lerp(h, Math.max(h, B.y - 0.35), k) : h;
+  return k > 0 ? Math.max(h, H.lerp(h, deck, k)) : h;
 }
+
+export { DECK_FEATHER };
 
 /* ================================================================
    一 · 栖梧谷 —— 青山梯田，溪流穿谷
@@ -84,7 +97,7 @@ const L1 = {
   subtitle: '昆仑之墟东南三百里',
   verse: '「引水为力，铸械为兵，守此一谷山川。」',
   lore: '谷民世代以机关术营生，引溪为力，驱轮为兵。凶兽破封而出，自左右两处山口奔涌而下，直取谷心的社树。',
-  brief: '溪谷梯田，水车成列。此地机力最盛，是学机关术的起手处。',
+  brief: '溪谷梯田，水车成列。机力最盛，五行齐备，是学机关术的起手处。',
 
   geo: {
     center: { x: 0, z: -14 },
@@ -154,8 +167,9 @@ const L1 = {
       h -= (1 - H.smoothstep(3.2, 12.0, dR)) * 4.4;
       h -= (1 - H.smoothstep(10, 22, dR)) * 0.5;
 
-      // 桥头引道。桥身本身不在地形里，见 bridgeApron 的注释
-      h = bridgeApron(h, x, z, H, BR1);
+      // 兽道过河处：路面按石拱桥的拱线抬起来，凶兽才是「走在桥面上」，
+      // 而不是从桥拱底下趟过去。窄窄一道，两侧照旧是水。
+      h = bridgeDeck(h, x, z, H, BR1);
       return h;
     },
 
@@ -232,10 +246,10 @@ const L1 = {
     ],
   },
 
-  // 栖梧谷开五行全谱，玄气只放一门「风」——
-  // 风克土、克毒，正好对上谷里的猰貐、饕餮与相柳
-  towers: ['crossbow', 'catapult', 'flame', 'frost', 'blade', 'thunder', 'gust', 'wheel', 'windmill', 'relay'],
-  rules: { startGold: 480, startHeart: 20 },
+  // 入门一关：五行齐备，另开罡风橐一味，先把「相克」这件事教会
+  towers: ['crossbow', 'catapult', 'flame', 'frost', 'blade', 'thunder', 'gale', 'wheel', 'windmill', 'relay'],
+  // 地脉：溪谷水足，机力最盛
+  rules: { startGold: 480, startHeart: 20, fireMult: 1.0, slowBonus: 0 },
 };
 
 /* ================================================================
@@ -249,7 +263,7 @@ const L2 = {
   subtitle: '昆仑之丘，其外有炎火之山',
   verse: '「投物辄然，其火不灭，昼夜赤光烛天。」',
   lore: '大荒之西，有山赤如丹砂，投物即燃。风蚀成柱，沙起如浪。谷中无水，唯熔岩一道自火口奔流而下——谷民引火为力，铸炉为兵。',
-  brief: '赤沙雅丹，熔岩成河。此地无水可引，须以火筒与风轮换取机力。',
+  brief: '赤沙雅丹，熔岩成河。无水可引，唯地火炉出力；炉火烘着，机关射速 +10%，寒气却难留（减速 −25%）。两口各行其道，只在火峡桥头挤成一股。',
 
   geo: {
     center: { x: 0, z: -10 },
@@ -315,20 +329,6 @@ const L2 = {
              * Math.max(0.16, 1 - 0.66 * Math.exp(-Math.pow(ang / 0.58, 2)));
       }
 
-      // 火山渣锥群：谷中一片矮而陡的小锥，顶上各有一个火口。
-      // 这是炎火之山独有的地貌，栖梧谷那种圆丘山包在这儿是找不到的
-      const CONES = [[-70, -60, 19], [-22, -74, 15], [26, -66, 17], [72, -46, 20],
-                     [-84, 22, 16], [80, 30, 18], [10, -96, 14]];
-      for (let i = 0; i < CONES.length; i++) {
-        const cd = Math.hypot(x - CONES[i][0], z - CONES[i][1]);
-        const cr = CONES[i][2];
-        if (cd > cr * 1.9) continue;
-        const t = 1 - H.clamp(cd / (cr * 1.9), 0, 1);
-        const cone = Math.pow(t, 1.35) * cr * 1.15;
-        const crater = Math.max(0, 1 - cd / (cr * 0.36)) * cr * 0.62;   // 顶上凹一个口
-        h += (cone - crater) * (1 - H.smoothstep(3, 10, H.dPath(x, z)) * 0.0);
-      }
-
       // 熔岩沟：压到定深（窄而深），沟沿翻起一道冷却的黑壳
       const dR = H.dRiver(x, z);
       // 熔岩沟：全宽压到定深，整条沟才是连贯的
@@ -338,7 +338,7 @@ const L2 = {
 
       // 兽道踩成的硬土带，比周围略低
       h -= (1 - H.smoothstep(0, 6.0, H.dPath(x, z))) * 0.55;
-      h = bridgeApron(h, x, z, H, BR2);
+      h = bridgeDeck(h, x, z, H, BR2);
       return h;
     },
 
@@ -355,18 +355,18 @@ const L2 = {
     },
   },
 
-  // ---- 路网：两条火道各走熔岩沟的一侧，各过各的桥，直到社树跟前才碰头。
-  // 与栖梧谷「早早合流、共用一条长干道」正好相反 —— 这一关得同时守两处，
-  // 一处摆的机关帮不上另一处，机力网络也要拉成两张。
   gates: [
     { x: -44, z: -104, name: '焦石口' },
     { x: 40, z: -106, name: '风蚀口' },
   ],
-  branchL: [[-44, -104], [-52, -88], [-58, -70], [-56, -52], [-50, -38], [-46, -26],
-            [-48, -14], [-52, 0], [-46, 14], [-34, 26], [-20, 36], [-8, 42]],
-  branchR: [[40, -106], [50, -90], [58, -72], [56, -54], [50, -40], [48, -28],
-            [50, -16], [54, -2], [48, 12], [36, 25], [22, 35], [8, 42]],
-  trunk: [[-8, 42], [0, 44], [0, 46]],
+  // 沙漏形路网：两口各行其道，在火峡的独木桥上挤成一股，出峡又分东西两路，
+  // 直到社树前才再合。所以这一关只有「桥头」一个真正的隘口 ——
+  // 那一处值得把家底都押上，别处却要两边各守一摊。
+  branchL: [[-44, -104], [-46, -90], [-38, -78], [-42, -64], [-30, -52], [-16, -42], [-6, -32],
+            [1, -22], [1, -13], [-12, -6], [-42, 2], [-46, 18], [-34, 28], [-14, 26], [0, 26]],
+  branchR: [[40, -106], [44, -92], [36, -80], [40, -66], [26, -53], [12, -42], [4, -32],
+            [1, -22], [1, -13], [14, -6], [44, 2], [48, 18], [36, 28], [16, 26], [0, 26]],
+  trunk: [[0, 26], [0, 33], [0, 40], [0, 46]],
 
   heart: { x: 0, z: 46 },
   plaza: { x0: -50, x1: 50, z0: -4, z1: 58 },
@@ -375,15 +375,11 @@ const L2 = {
     kind: 'lava',
     pts: [[-160, -48], [-116, -36], [-74, -26], [-42, -20], [-14, -16],
           [18, -15], [50, -19], [88, -27], [130, -40], [168, -52]],
-    halfWidth: 4.2,
+    halfWidth: 5.8,
     deep: 0x4a0d03, shallow: 0xd63a08, foam: 0xffd070,
     opacity: 0.98, flow: 0.35, emissive: 1.0,
   },
-  // 两条火道各架一座石桥，跨在熔岩沟上
-  bridges: [
-    { x: -48, z: -17.6, angle: 0.16, ...BR2 },
-    { x: 51, z: -16.0, angle: -0.14, ...BR2 },
-  ],
+  bridge: { x: 1, z: -17.0, angle: 0.10, ...BR2 },
 
   climate: {
     fogMul: 1.45, fogTint: 0xd07a44, skyTint: 0xffb070, sunTint: 0xffd0a0,
@@ -417,20 +413,19 @@ const L2 = {
       { id: 'h6', x: 8, z: -64, ry: 0.36, w: 8.5, d: 6.5, floors: 1, floorH: 3.3, roofH: 2.1, hip: false },
       { id: 'h7', x: 38, z: -68, ry: -0.24, w: 7.5, d: 6, floors: 1, floorH: 3.1, roofH: 2.0, hip: false },
       { id: 'h8', x: -24, z: -78, ry: 0.52, w: 7.5, d: 6, floors: 1, floorH: 3.1, roofH: 2.0, hip: false },
-      { id: 'shopL', x: -44, z: 12, ry: 0.34, w: 12.5, d: 8.5, floors: 1, floorH: 4.0, roofH: 2.7, hip: true, big: true },
-      { id: 'shopR', x: 46, z: 8, ry: -0.38, w: 11.5, d: 8, floors: 1, floorH: 3.9, roofH: 2.6, hip: true, big: true },
-      { id: 'shopS', x: 28, z: -4, ry: 0.14, w: 8.5, d: 6.5, floors: 1, floorH: 3.3, roofH: 2.1, hip: false },
+      // 两条外环从东西两侧兜过来，作坊得挪进环内的空当里
+      { id: 'shopL', x: -22, z: 14, ry: 0.34, w: 12.5, d: 8.5, floors: 1, floorH: 4.0, roofH: 2.7, hip: true, big: true },
+      { id: 'shopR', x: 24, z: 12, ry: -0.38, w: 11.5, d: 8, floors: 1, floorH: 3.9, roofH: 2.6, hip: true, big: true },
+      { id: 'shopS', x: 0, z: 8, ry: 0.14, w: 8.5, d: 6.5, floors: 1, floorH: 3.3, roofH: 2.1, hip: false },
       { id: 'eaveL', x: -60, z: 58, ry: 0.32, w: 16, d: 7, floors: 1, floorH: 4.6, roofH: 3.0, hip: false, corridor: true, big: true },
       { id: 'eaveR', x: 60, z: 60, ry: -0.28, w: 16, d: 7, floors: 1, floorH: 4.6, roofH: 3.0, hip: false, corridor: true, big: true },
     ],
   },
 
-  // 炎火之山：火兽压倒性 —— 开「蛟龙渠」以水穿刺，开「幽冥幡」制帝江、肥遗与朱厌之金。
-  // 此地无水可引，寒泉阵仍在，却接不上多少机力
-  towers: ['crossbow', 'catapult', 'flame', 'frost', 'blade', 'torrent', 'shade', 'forge', 'windmill', 'relay'],
-  // 地火助燃：贴着熔岩沟摆的机关转得更快 —— 这一关的机关要往险处摆
-  rule: { id: 'lava', nearRiver: 14, fireBonus: 0.20 },
-  rules: { startGold: 560, startHeart: 20 },
+  // 满山火属，流火筒在这儿等于白打 —— 换成瘴烟炉与须弥壶
+  towers: ['crossbow', 'catapult', 'frost', 'blade', 'thunder', 'gale', 'miasma', 'voidjar', 'forge', 'windmill', 'relay'],
+  // 地脉：炉火烘着，机括热得快，射速自带一成；但谷中无水，寒气也养不住
+  rules: { startGold: 560, startHeart: 20, fireMult: 1.10, slowBonus: -0.25 },
 };
 
 /* ================================================================
@@ -444,7 +439,7 @@ const L3 = {
   subtitle: '北海之内，有山名曰幽都之山',
   verse: '「大荒之中，有山名曰不咸。冰厚千尺，日不能照。」',
   lore: '北海之内，黑水之滨。冰川自天而下，裂如刀劈；冻河深不见底，映得出人影。谷民凿冰为渠，以寒气驭机——此地机关不惧过热，却怕冻死。',
-  brief: '冰川塔林，冻河如镜。极夜漫长，寒气反倒使机关运转如飞。',
+  brief: '冰川塔林，冻河如镜。酷寒使机括发脆，射速 −12%；但冰面极滑，一切减速 +55%。兽道贴着冰坎来回折三趟 —— 摆在中间的机关能连打三遍。',
 
   geo: {
     center: { x: 0, z: -16 },
@@ -454,9 +449,11 @@ const L3 = {
     plazaY: 0,
     tex: ['snow', 'ice', 'rockDark'],
     plazaTex: 'flagstoneIce',
-    // 雪面的宏观色偏也压下来：不压的话地面自己就把整幅画面顶白了
-    macroWarm: [0.78, 0.85, 1.00],
-    macroCool: [0.56, 0.66, 0.86],
+    // 雪的反照率本来就高，再乘一个大于一的宏观色偏，整关立刻白到糊。
+    // 这两组压到一附近，雪才是「冷而暗的雪」，不是一张过曝的纸 ——
+    // 但也别压狠了，压过头整关就成了一片看不清东西的深蓝。
+    macroWarm: [0.94, 0.98, 1.06],
+    macroCool: [0.80, 0.86, 0.99],
 
     height(x, z, H) {
       const dxc = x, dzc = z + 16;
@@ -512,7 +509,7 @@ const L3 = {
       // 冻河：河床压到定深，冰面才不会大半埋在岸里
       const iceBed = 1 - H.smoothstep(9.5, 21.0, dR);
       if (iceBed > 0) h = H.lerp(h, -3.4, iceBed);
-      h = bridgeApron(h, x, z, H, BR3);
+      h = bridgeDeck(h, x, z, H, BR3);
       return h;
     },
 
@@ -529,21 +526,17 @@ const L3 = {
     },
   },
 
-  // ---- 路网：两条支道很快就并到一处，此后是一条之字形的长冰坡，
-  // 一级冰坎一个回头弯。同一座机关能同时够到上下两折 —— 与炎火之山
-  // 「两处各守各的」恰好相反，这一关拼的是把火力压在折返点上。
   gates: [
     { x: -40, z: -106, name: '玄冰口' },
     { x: 42, z: -100, name: '黑水口' },
   ],
-  branchL: [[-40, -106], [-34, -98], [-24, -94], [-14, -92]],
-  branchR: [[42, -100], [34, -96], [22, -93], [8, -92]],
-  trunk: [[-14, -92], [8, -92],
-          [38, -84], [40, -74], [10, -70], [-30, -66], [-44, -58],
-          [-42, -48], [-8, -44], [30, -40], [44, -32],
-          [40, -22], [4, -18], [-34, -14], [-48, -4],
-          [-44, 8], [-14, 14], [22, 18], [40, 28],
-          [30, 40], [8, 46], [0, 48]],
+  // 回头路：冰川把谷底刮成一级级横向的坎，兽道只能贴着坎口来回折。
+  // 三道横扫的折返叠在一块地上 —— 摆在中间的机关能连打三趟，
+  // 但路也长得多，撑不住的话就是一波接一波地漏。
+  branchL: [[-40, -106], [-36, -92], [-28, -80], [-32, -66], [-22, -52], [-10, -40], [-3, -32], [0, -27]],
+  branchR: [[42, -100], [38, -88], [30, -78], [33, -62], [20, -50], [8, -39], [2, -32], [0, -27]],
+  trunk: [[0, -27], [0, -12], [-6, -2], [-44, 4], [-46, 20], [40, 26], [44, 42],
+          [-30, 48], [-6, 54], [0, 48]],
 
   heart: { x: 0, z: 48 },
   plaza: { x0: -48, x1: 48, z0: 0, z1: 60 },
@@ -556,13 +549,14 @@ const L3 = {
     deep: 0x123448, shallow: 0x3f7f96, foam: 0xe4f6ff,
     opacity: 0.80, flow: 0.16,
   },
-  bridge: { x: -18.0, z: -16.4, angle: 1.24, ...BR3 },
+  bridge: { x: -3, z: -16.0, angle: -0.05, ...BR3 },
 
-  // 幽都是「日不能照」的地方：曝光压到六成，天光、雾、日色一并压深压蓝，
-  // 云盖拉满。原先那一版整关白得发飘，雪面糊成一片没有层次
   climate: {
-    fogMul: 1.70, fogTint: 0x2f4560, skyTint: 0x35506f, sunTint: 0x7e9ac0,
-    cloudCover: 0.62, wind: 1.4, exposure: 0.58, aurora: 1.0,
+    fogMul: 1.28, fogTint: 0x5c7290, skyTint: 0x5e7a9e, sunTint: 0xa8bcd6,
+    cloudCover: 0.34, wind: 1.4, exposure: 0.73, aurora: 1.0,
+    // 幽都不是没有光，是光都被雪吃掉了：日头收两成，辉光减四成，
+    // 对比度提上来 —— 这样屋子与雪面才分得开，又不至于糊成一片白
+    lightMul: 0.74, bloomMul: 0.52, bloomThr: 0.58, contrast: 1.11, sat: 0.95,
   },
 
   flora: {
@@ -592,19 +586,20 @@ const L3 = {
       { id: 'h6', x: 4, z: -60, ry: 0.32, w: 8, d: 6, floors: 1, floorH: 3.0, roofH: 2.7, hip: true },
       { id: 'h7', x: 32, z: -64, ry: -0.20, w: 7, d: 5.5, floors: 1, floorH: 2.8, roofH: 2.5, hip: false },
       { id: 'h8', x: -22, z: -74, ry: 0.48, w: 7, d: 5.5, floors: 1, floorH: 2.8, roofH: 2.5, hip: false },
-      { id: 'shopL', x: -42, z: 16, ry: 0.30, w: 12, d: 8, floors: 1, floorH: 3.7, roofH: 3.2, hip: true, big: true },
-      { id: 'shopR', x: 44, z: 12, ry: -0.34, w: 11, d: 7.5, floors: 1, floorH: 3.6, roofH: 3.1, hip: true, big: true },
-      { id: 'shopS', x: 24, z: 0, ry: 0.10, w: 8, d: 6, floors: 1, floorH: 3.0, roofH: 2.6, hip: false },
+      // 折返的三道兽道横在广场上，作坊只能落在两道之间的空带里
+      { id: 'shopL', x: -22, z: 12, ry: 0.30, w: 12, d: 8, floors: 1, floorH: 3.7, roofH: 3.2, hip: true, big: true },
+      { id: 'shopR', x: 20, z: 11, ry: -0.34, w: 11, d: 7.5, floors: 1, floorH: 3.6, roofH: 3.1, hip: true, big: true },
+      { id: 'shopS', x: 26, z: 34, ry: 0.10, w: 8, d: 6, floors: 1, floorH: 3.0, roofH: 2.6, hip: false },
       { id: 'eaveL', x: -58, z: 60, ry: 0.30, w: 16, d: 7, floors: 1, floorH: 4.4, roofH: 3.4, hip: false, corridor: true, big: true },
       { id: 'eaveR', x: 58, z: 62, ry: -0.26, w: 16, d: 7, floors: 1, floorH: 4.4, roofH: 3.4, hip: false, corridor: true, big: true },
     ],
   },
 
-  // 幽都寒渊：厚甲高血，「百毒瓮」蚀甲、「飓风橐」推坡，是这一关的正解
-  towers: ['crossbow', 'catapult', 'flame', 'frost', 'blade', 'thunder', 'gust', 'venom', 'wheel', 'windmill', 'relay'],
-  // 冰面打滑：踏上冻河与冰道的凶兽脚下生风，但一旦被冻住也格外难挣
-  rule: { id: 'ice', nearRiver: 10, speedBonus: 0.32, slowBonus: 0.5 },
-  rules: { startGold: 600, startHeart: 18 },
+  // 冰原上再引寒气也无用，寒泉阵不开；换蚀影幢与养蛊瓮对付厚甲
+  towers: ['crossbow', 'catapult', 'flame', 'blade', 'thunder', 'miasma', 'guwen', 'umbra', 'wheel', 'windmill', 'relay'],
+  // 地脉：极寒。铜铁发脆、油脂凝住，射速要打个折；
+  //       但冰面极滑，凡是减速的手段都格外见效
+  rules: { startGold: 600, startHeart: 18, fireMult: 0.88, slowBonus: 0.55 },
 };
 
 /* ================================================================
@@ -632,7 +627,7 @@ const L4 = {
   subtitle: '渤海之东，不知几亿万里，有大壑焉',
   verse: '「八纮九野之水，天汉之流，莫不注之，而无增无减。」',
   lore: '东海之东有大壑，名曰归墟。众水注之而不盈，其下有眼，昼夜吞吐。岛屿浮沉其间，谷民架栈桥相连，以潮汐驱轮。',
-  brief: '群岛栈桥，潮汐为力。地窄而路长，机关只能沿桥摆开。',
+  brief: '群岛栈桥，潮汐为力。地窄路长，机关只能沿桥摆开；潮气锈铜，射速 −5%。飞兽成群，罡风橐是这一关的命。',
 
   geo: {
     center: { x: 0, z: -12 },
@@ -775,9 +770,10 @@ const L4 = {
     ],
   },
 
-  // 归墟海眼：满地水属 —— 「万蛊坛」与「引雷桩」是主力，「蛟龙渠」沿栈桥一线洗过去
-  towers: ['crossbow', 'catapult', 'flame', 'frost', 'blade', 'thunder', 'torrent', 'gust', 'gu', 'tide', 'windmill', 'relay'],
-  rules: { startGold: 640, startHeart: 16 },
+  // 雷入大海即散，引雷桩不开；飞兽成群，罡风橐是这一关的主力
+  towers: ['crossbow', 'catapult', 'flame', 'frost', 'blade', 'gale', 'guwen', 'umbra', 'voidjar', 'tide', 'windmill', 'relay'],
+  // 地脉：潮气重，铜锈得快，射速略减；海风把减速的雾气吹散一些
+  rules: { startGold: 640, startHeart: 16, fireMult: 0.95, slowBonus: -0.10 },
 };
 
 /* ================================================================
@@ -804,7 +800,7 @@ const L5 = {
   subtitle: '昆仑之丘，是实惟帝之下都',
   verse: '「面有九井，以玉为槛；面有九门，门有开明兽守之。」',
   lore: '昆仑之巅，玉台悬于云海之上，以石梁相连，下临无地。开明兽守九门，百神所在。凶兽自天梯攀援而上——此处一步失守，便是万丈。',
-  brief: '悬圃浮空，云海为渊。可建之地极狭，唯石梁与玉台而已。',
+  brief: '悬圃浮空，云海为渊。可建之地极狭，唯石梁与玉台；然玉枢自转，机关射速 +15%。十一属机关俱在此关开放。',
 
   geo: {
     center: { x: 0, z: -10 },
@@ -947,9 +943,10 @@ const L5 = {
     ],
   },
 
-  // 昆仑天阙：玄六气尽出。「须弥壶」把攀上玉台的凶兽整片卷回天梯，是守不住时的最后一手
-  towers: ['crossbow', 'catapult', 'flame', 'frost', 'blade', 'thunder', 'gust', 'shade', 'gu', 'sumeru', 'aether', 'relay'],
-  rules: { startGold: 700, startHeart: 16 },
+  // 帝之下都，十一属俱在 —— 全谱开放，可建之地却极狭
+  towers: ['crossbow', 'catapult', 'flame', 'frost', 'blade', 'thunder', 'gale', 'miasma', 'guwen', 'umbra', 'voidjar', 'aether', 'relay'],
+  // 地脉：帝之下都，玉枢自转，机括如飞；只是可建之地极狭
+  rules: { startGold: 700, startHeart: 16, fireMult: 1.15, slowBonus: 0.15 },
 };
 
 /* ================================================================ */

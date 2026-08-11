@@ -19,18 +19,19 @@
   --azure:      #4b8fd0;
   --violet:     #9d7ad6;
 
+  /* 五行 */
   --el-metal:   #d9d3bd;
   --el-wood:    #7fb85e;
-  --el-water:   #56a8d8;
+  --el-water:   #4a9fe0;
   --el-fire:    #e8703a;
   --el-earth:   #cf9a4c;
-  /* 玄六气 */
-  --el-thunder: #8fd0ff;
-  --el-wind:    #7fe6cc;
-  --el-poison:  #c4dc36;
-  --el-gu:      #b44ad8;
-  --el-dark:    #8a76d8;
-  --el-void:    #e4dcf4;
+  /* 六气 */
+  --el-thunder: #6fe0ff;
+  --el-wind:    #7fe8c8;
+  --el-poison:  #b4e04a;
+  --el-gu:      #e05ab4;
+  --el-dark:    #8a6ede;
+  --el-space:   #dcd6f6;
 
   --font-hei: "PingFang SC", "Microsoft YaHei", "Noto Sans SC", "Source Han Sans SC", "Hiragino Sans GB", system-ui, sans-serif;
   --font-song: "Songti SC", "STSong", "Noto Serif SC", "Source Han Serif SC", "SimSun", "Times New Roman", serif;
@@ -127,68 +128,77 @@ kbd {
   100% { transform: translate3d(4%, -3%, 0) scale(1.16) rotate(8deg); opacity: .82; }
 }
 
-/* ---- 机关齿轮组（真 3D：分层挤出 + 后仰的舞台）---- */
+/* ============================================================
+   机关齿轮组 —— 真三维
+   每枚轮子是一叠沿 Z 排开的薄片，整组挂在一块后仰的舞台上。
+   全部走 CSS 动画（合成器线程），主线程烘贴图卡住时齿轮照转。
+   ============================================================ */
 .gear-rig {
-  width: min(330px, 68vw); aspect-ratio: 1;
-  margin: 0 auto 30px;
-  perspective: 900px;
-  perspective-origin: 50% 46%;
+  width: min(320px, 66vw); aspect-ratio: 1;
+  margin: 0 auto 34px;
+  perspective: 760px;
+  perspective-origin: 50% 42%;
+  animation: rigIn 1.5s cubic-bezier(.16,.86,.3,1) both;
 }
-/* 入场淡入放在没有 perspective 的外层：给 .gear-rig 挂 opacity/filter 动画
-   会把它变成一个合成组，底下整棵 3D 子树会被压平甚至整个不画。 */
-.loader-core { animation: rigIn 1.5s cubic-bezier(.16,.86,.3,1) both; }
-/* 整组轮系放在一个后仰的舞台里，慢慢摇一摇，立体感才出得来 */
 .gear-stage {
   position: relative; width: 100%; height: 100%;
   transform-style: preserve-3d;
-  animation: rigSway 19s ease-in-out infinite alternate;
+  animation: rigSway 17s ease-in-out infinite alternate;
 }
-@keyframes rigSway {
-  from { transform: rotateX(44deg) rotateZ(-12deg); }
-  to   { transform: rotateX(28deg) rotateZ(7deg); }
+/* 一枚轮子：定位 + 啮合相位，自身仍是 3D 容器 */
+.gear {
+  position: absolute; left: 50%; top: 50%;
+  width: 0; height: 0;
+  transform-style: preserve-3d;
 }
-/* 入场只淡入：这一层有 perspective，挂 filter 会连累整个 3D 子树 */
-@keyframes rigIn {
-  0%   { opacity: 0; }
-  100% { opacity: 1; }
-}
-
-.gear-defs { position: absolute; width: 0; height: 0; overflow: hidden; }
-
-.g3 { position: absolute; transform-style: preserve-3d; }
-/* 自转。舞台已经把 Z 轴摆成了轴线方向，这里绕 Z 转就是绕轴转 */
-.g3-spin {
-  position: absolute; inset: 0;
+.gear-spin {
+  position: absolute; left: 0; top: 0;
   transform-style: preserve-3d;
   animation: gearCW var(--dur, 12s) linear infinite;
   will-change: transform;
 }
-.g3-spin.ccw { animation-name: gearCCW; }
-@keyframes gearCW  { from { transform: rotateZ(0deg); }   to { transform: rotateZ(360deg); } }
-@keyframes gearCCW { from { transform: rotateZ(0deg); }   to { transform: rotateZ(-360deg); } }
+.gear-spin.ccw { animation-name: gearCCW; }
+@keyframes gearCW  { to { transform: rotate(360deg); } }
+@keyframes gearCCW { to { transform: rotate(-360deg); } }
 
-/* 切片上一律不许挂 filter：3D 上下文里的 filter 会把元素摘出去，整组齿轮会消失。
-   明暗、辉光都烘在 SVG 的渐变与描边里。 */
-.g3-slice { position: absolute; inset: 0; transform-style: preserve-3d; }
-.g3-slice svg { display: block; width: 100%; height: 100%; overflow: visible; }
-
-/* 轴：轮心穿出去的一小截，转起来能看见 */
-.g3-axle {
-  position: absolute; left: 50%; top: 50%;
-  width: var(--r, 8%); height: var(--r, 8%);
-  margin: calc(var(--r, 8%) / -2) 0 0 calc(var(--r, 8%) / -2);
+/* 一片薄片。left/top 由 JS 按 px 给 —— SVG 根元素上的百分比 transform
+   是按 viewBox 解析的，用 translate(-50%,-50%) 会把整幅图推出画面。 */
+.gp {
+  position: absolute;
+  overflow: visible;
+  backface-visibility: hidden;
+}
+/* 最上一片的辐板细节 */
+.gp-face { opacity: .92; }
+/* 高光片：不随轮子转，铜面才像被一盏固定的灯照着 */
+.gp-shine { pointer-events: none; mix-blend-mode: soft-light; }
+/* 轴头 */
+.gear-axle {
+  position: absolute; left: 0; top: 0; display: block;
   border-radius: 50%;
-  background: radial-gradient(circle at 34% 30%, #ffeec2, #a2792f 58%, #4a3514);
-  box-shadow: 0 0 8px rgba(245,214,141,.5);
-  transform: translateZ(9px);
+  background: radial-gradient(circle at 34% 30%, #fff2cf, #d8ac52 42%, #6b4d1c 100%);
+  box-shadow: 0 0 8px rgba(245,214,141,.55);
 }
 
-/* 度盘与进度环：浮在轮系上方一层，随舞台一起后仰 */
+/* 度盘与进度环浮在轮系前面一层 */
 .gear-dial {
-  position: absolute; inset: 0;
-  width: 100%; height: 100%; overflow: visible;
-  transform: translateZ(26px);
-  pointer-events: none;
+  position: absolute;
+  overflow: visible; pointer-events: none;
+}
+
+/* 入场：只做缩放与淡入。别在这儿挂 filter —— 一个 filter 会把整棵子树
+   压平（transform-style 变 flat），叠出来的轮齿厚度就白做了。 */
+@keyframes rigIn {
+  0%   { opacity: 0; transform: scale(.86) translateY(12px); }
+  100% { opacity: 1; transform: none; }
+}
+/* 舞台缓缓地晃，纵深才看得出来 */
+@keyframes rigSway {
+  0%   { transform: rotateX(26deg) rotateZ(-5deg) rotateY(-7deg); }
+  100% { transform: rotateX(18deg) rotateZ(3deg) rotateY(8deg); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .gear-stage { animation: none; transform: rotateX(22deg); }
 }
 
 /* 外圈进度环 */
@@ -203,6 +213,31 @@ kbd {
 .tick { stroke: rgba(216,172,82,.30); stroke-width: 1.2; }
 .tick-major { stroke: rgba(216,172,82,.62); stroke-width: 1.8; }
 
+/* ---- 进度：金线 + 游走的高光 ---- */
+.loader-bar {
+  height: 2px; width: 100%; position: relative;
+  background: rgba(216,172,82,.14);
+  animation: fadeUp .8s .9s ease both;
+}
+.loader-bar i {
+  position: absolute; left: 0; top: -1px; bottom: -1px; width: 0%;
+  background: linear-gradient(90deg, #7c6030, #f5d68d 62%, #fff6de);
+  box-shadow: 0 0 18px rgba(245,214,141,.75);
+  transition: width .3s cubic-bezier(.3,.9,.3,1);
+}
+.loader-bar u {
+  position: absolute; inset: 0; overflow: hidden;
+}
+.loader-bar u::after {
+  content: ''; position: absolute; top: 0; bottom: 0; width: 34%;
+  background: linear-gradient(90deg, transparent, rgba(255,246,222,.7), transparent);
+  animation: sweep 2.4s linear infinite;
+}
+@keyframes sweep { from { left: -34%; } to { left: 100%; } }
+.loader-hint {
+  margin-top: 16px; font-size: 12px; letter-spacing: .24em; color: var(--paper-dim);
+  animation: fadeUp .8s 1s ease both;
+}
 .loader-verse {
   margin-top: 42px; font-family: var(--font-song); font-size: 13px;
   letter-spacing: .18em; color: rgba(233,220,190,.34);
@@ -563,36 +598,6 @@ kbd {
 .nw-chip i { width: 7px; height: 7px; border-radius: 50%; display: block; }
 .nw-chip u { text-decoration: none; color: var(--paper-dim); font-size: 10px; }
 
-/* 克制预告：这一波该拿哪一门气去打 */
-.nw-advice {
-  display: flex; align-items: center; gap: 5px; flex-wrap: wrap;
-  margin-top: 7px; padding-top: 6px;
-  border-top: 1px dashed rgba(216,172,82,.20);
-  font-size: 10px; letter-spacing: .06em;
-}
-.nw-adv-l { color: rgba(233,220,190,.5); font-family: var(--font-song); letter-spacing: .18em; }
-.nw-adv-t { color: rgba(233,220,190,.58); margin-right: 5px; }
-.el-chip {
-  display: inline-block; min-width: 15px; text-align: center;
-  padding: 0 3px; margin-right: 2px;
-  border: 1px solid currentColor; border-radius: 2px;
-  font-family: var(--font-song); font-size: 10px; line-height: 15px;
-  background: rgba(0,0,0,.28);
-}
-.el-dot { width: 7px; height: 7px; border-radius: 50%; display: inline-block; }
-/* 提示框里的相克两行 */
-.tip-cnt {
-  display: flex; align-items: flex-start; gap: 6px;
-  font-size: 10px; margin: 2px 0 4px;
-}
-.tip-cnt > span {
-  flex: none; width: 34px; color: rgba(233,220,190,.45);
-  font-family: var(--font-song); letter-spacing: .12em; line-height: 17px;
-}
-.tip-cnt > div { display: flex; flex-wrap: wrap; align-items: center; gap: 2px; }
-.tip-cnt.bad > span { color: rgba(255,154,134,.6); }
-.el-why { color: rgba(233,220,190,.40); margin-right: 7px; font-size: 10px; }
-
 /* ---------- 提示 ---------- */
 #toast {
   position: absolute; top: 88px; left: 50%; transform: translateX(-50%);
@@ -819,6 +824,45 @@ kbd {
 }
 .tip-warn { color: #ff9a86; font-size: 11px; margin-top: 5px; }
 
+/* 相克预告：一行「克谁 / 被谁克」，后面缀上倍率 */
+.tip-cnt {
+  font-size: 11px; margin-bottom: 4px; color: rgba(233,220,190,.72);
+  display: flex; align-items: center; gap: 4px; flex-wrap: wrap;
+}
+.tip-cnt.bad { color: rgba(233,220,190,.46); }
+.tip-cnt s {
+  text-decoration: none; margin-left: auto; font-size: 10px;
+  color: var(--paper-dim); font-variant-numeric: tabular-nums;
+}
+.tip-note {
+  font-size: 10px; color: rgba(233,220,190,.40);
+  font-family: var(--font-song); letter-spacing: .06em;
+  margin: 2px 0 6px; padding-left: 1px;
+}
+/* 属性小徽章 */
+.elc {
+  display: inline-block; min-width: 15px; text-align: center;
+  font-size: 10px; line-height: 14px; padding: 0 3px;
+  border: 1px solid currentColor; border-radius: 3px;
+  font-family: var(--font-song); opacity: .95;
+}
+.nw-el {
+  font-style: normal; font-size: 9px; opacity: .85;
+  font-family: var(--font-song); margin-left: 1px;
+}
+/* 波次预告下面的一行「宜用」*/
+.nw-hint {
+  display: flex; align-items: center; gap: 4px;
+  margin-top: 6px; padding-top: 6px;
+  border-top: 1px solid rgba(216,172,82,.16);
+  cursor: help;
+}
+.nw-hint:empty { display: none; }
+.nw-hint span {
+  font-size: 10px; letter-spacing: .12em; color: var(--paper-dim);
+  font-family: var(--font-song);
+}
+
 /* ============================================================
    结算
    ============================================================ */
@@ -866,7 +910,7 @@ kbd {
   .lc-brief { display: none; }
 }
 @media (max-width: 1180px) {
-  .bcard { width: 58px; padding: 6px 3px 5px; }
+  .bcard { width: 64px; padding: 6px 3px 5px; }
   .bc-icon { width: 34px; height: 34px; }
   .bc-name { font-size: 11px; }
   #buildBar { right: 232px; }
@@ -878,7 +922,7 @@ kbd {
   .panel-tl { min-width: 0; padding: 9px 12px; }
   .wave-num { font-size: 26px; }
   .panel-tr { min-width: 168px; padding: 9px 12px; }
-  .bcard { width: 54px; }
+  .bcard { width: 60px; }
   .bc-icon { width: 32px; height: 32px; }
   .bc-name { font-size: 11px; }
   #skillBar { right: 16px; bottom: 68px; }

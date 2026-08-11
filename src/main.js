@@ -18,16 +18,19 @@ import { applyLevel } from './world/layout.js';
 
 const $ = (s) => document.querySelector(s);
 
-/* ================================================================
-   载入页的机关齿轮组
-   ----------------------------------------------------------------
-   齿形、节圆、啮合位置、转速比全部算出来：
-   两轮啮合时中心距 = 两节圆半径之和，角速度之比 = 齿数之比的倒数，
-   方向相反。这样看上去才是真的在带动，而不是几张图各转各的。
 
-   立体是真的立体：一枚齿轮由 SLICES 层同一条轮廓沿轴向叠出来，
-   整组再放进一个 rotateX 的 3D 舞台里 —— 轮齿转到侧面时能看见厚度，
-   齿顶还会挡住后面那一枚。全部走合成器动画，主线程忙着烘纹理也不会卡。
+/* ================================================================
+   载入页的机关齿轮组 —— 真三维
+   ----------------------------------------------------------------
+   齿数、节圆、中心距、转速比、啮合相位全部算出来：
+   两轮啮合时中心距 = 两节圆半径之和，角速度之比 = 齿数之比的倒数，
+   方向相反；从动轮还要转过一个相位角，让自己的齿槽正对着主动轮的齿。
+
+   厚度不是画上去的阴影 —— 每枚轮子是一叠沿 Z 轴排开的薄片（CSS
+   preserve-3d），整组挂在一块后仰的舞台上，所以转起来能看见轮齿的
+   侧面在明暗里进出。高光片不跟着转，铜面才像是被一盏固定的灯照着。
+
+   全部走 CSS 动画（合成器线程），所以主线程在烘贴图卡住时，齿轮照转。
    ================================================================ */
 const SVGNS = 'http://www.w3.org/2000/svg';
 const el = (n, a = {}) => {
@@ -36,101 +39,173 @@ const el = (n, a = {}) => {
   return e;
 };
 
-// 一枚齿轮的轮廓。齿廓用二次贝塞尔逼近渐开线：齿根起手，经节圆鼓出，
-// 收到齿顶再走一段齿顶弧 —— 比直上直下的梯形齿像机械得多。
-function gearPath(R, rRoot, n) {
-  const step = (Math.PI * 2) / n;
-  const rPitch = R * 0.62 + rRoot * 0.38;
-  const P = (r, a) => `${(Math.cos(a) * r).toFixed(2)},${(Math.sin(a) * r).toFixed(2)}`;
-  const RR = R.toFixed(2), Rr = rRoot.toFixed(2);
-  let d = `M${P(rRoot, 0)}`;
+// 一枚齿轮的轮廓。渐开线用二次贝塞尔近似：齿根圆角、齿侧内凹、齿顶倒角，
+// 比梯形齿看着「铸」得出来。
+function gearOutline(R, rRoot, n) {
+  const p = (Math.PI * 2) / n;
+  const rPitch = (R + rRoot) * 0.52;
+  const rTip = R;
+  const P = [];
+  const pt = (r, a) => `${(Math.cos(a) * r).toFixed(2)},${(Math.sin(a) * r).toFixed(2)}`;
   for (let i = 0; i < n; i++) {
-    const a = i * step;
-    d += `Q${P(rPitch, a + step * 0.11)} ${P(R, a + step * 0.29)}`;          // 上升齿廓
-    d += `A${RR},${RR} 0 0 1 ${P(R, a + step * 0.50)}`;                      // 齿顶弧
-    d += `Q${P(rPitch, a + step * 0.68)} ${P(rRoot, a + step * 0.79)}`;      // 下降齿廓
-    d += `A${Rr},${Rr} 0 0 1 ${P(rRoot, a + step)}`;                         // 齿根弧
+    const a = i * p;
+    // 齿根 -> 节圆（凹）-> 齿顶前缘
+    P.push((i ? 'L' : 'M') + pt(rRoot, a + p * 0.04));
+    P.push('Q' + pt(rRoot * 1.02, a + p * 0.10) + ' ' + pt(rPitch, a + p * 0.155));
+    P.push('Q' + pt(R * 0.99, a + p * 0.20) + ' ' + pt(rTip * 0.995, a + p * 0.225));
+    // 齿顶：中间略鼓，两端倒角
+    P.push('L' + pt(rTip, a + p * 0.26));
+    P.push('L' + pt(rTip, a + p * 0.34));
+    P.push('L' + pt(rTip * 0.995, a + p * 0.375));
+    // 齿顶后缘 -> 节圆 -> 齿根
+    P.push('Q' + pt(R * 0.99, a + p * 0.40) + ' ' + pt(rPitch, a + p * 0.445));
+    P.push('Q' + pt(rRoot * 1.02, a + p * 0.50) + ' ' + pt(rRoot, a + p * 0.56));
+    // 齿根弧：走个中点，不至于切成直边
+    P.push('Q' + pt(rRoot * 0.985, a + p * 0.80) + ' ' + pt(rRoot, a + p * 1.04));
   }
-  return d + 'Z';
+  return P.join('') + 'Z';
 }
 
-// 圆形子路径。和外轮廓凑成 evenodd，就是真的挖穿的孔
-function holePath(cx, cy, r) {
-  const R = r.toFixed(2);
-  return `M${(cx + r).toFixed(2)},${cy.toFixed(2)}` +
-         `A${R},${R} 0 1 0 ${(cx - r).toFixed(2)},${cy.toFixed(2)}` +
-         `A${R},${R} 0 1 0 ${(cx + r).toFixed(2)},${cy.toFixed(2)}Z`;
+// 一片薄片：轮廓 + （最上一片才画的）辐板细节
+function gearPlate(o) {
+  const { R, rRoot, teeth, spokes, size, fill, stroke, top, hub } = o;
+  const s = el('svg', {
+    class: 'gp', viewBox: `${-size / 2} ${-size / 2} ${size} ${size}`,
+    width: size, height: size,
+  });
+  const d = gearOutline(R, rRoot, teeth);
+  s.appendChild(el('path', { d, fill, stroke: stroke || 'none', 'stroke-width': 0.6, 'stroke-linejoin': 'round' }));
+  if (!top) return s;
+
+  // 顶面：轮辐、轮毂、铆钉、减重孔
+  const web = el('g', { class: 'gp-face' });
+  web.appendChild(el('circle', { r: (R * 0.80).toFixed(2), fill: 'none', stroke: 'rgba(24,15,5,.42)', 'stroke-width': (R * 0.10).toFixed(2) }));
+  web.appendChild(el('circle', { r: (R * 0.72).toFixed(2), fill: 'none', stroke: 'rgba(255,232,180,.30)', 'stroke-width': 0.9 }));
+  // 辐板挖空：轮辐之间的月牙孔
+  for (let i = 0; i < spokes; i++) {
+    const a0 = ((i + 0.16) / spokes) * Math.PI * 2;
+    const a1 = ((i + 0.84) / spokes) * Math.PI * 2;
+    const r0 = R * 0.34, r1 = R * 0.63;
+    const P = [
+      `M${(Math.cos(a0) * r0).toFixed(2)},${(Math.sin(a0) * r0).toFixed(2)}`,
+      `L${(Math.cos(a0) * r1).toFixed(2)},${(Math.sin(a0) * r1).toFixed(2)}`,
+      `A${r1.toFixed(2)},${r1.toFixed(2)} 0 0 1 ${(Math.cos(a1) * r1).toFixed(2)},${(Math.sin(a1) * r1).toFixed(2)}`,
+      `L${(Math.cos(a1) * r0).toFixed(2)},${(Math.sin(a1) * r0).toFixed(2)}`,
+      `A${r0.toFixed(2)},${r0.toFixed(2)} 0 0 0 ${(Math.cos(a0) * r0).toFixed(2)},${(Math.sin(a0) * r0).toFixed(2)}`,
+      'Z',
+    ].join('');
+    web.appendChild(el('path', { d: P, fill: 'rgba(10,7,3,.62)', stroke: 'rgba(255,226,166,.20)', 'stroke-width': 0.7 }));
+  }
+  // 轮毂
+  web.appendChild(el('circle', { r: (R * 0.30).toFixed(2), fill: hub, stroke: 'rgba(255,232,180,.42)', 'stroke-width': 0.9 }));
+  web.appendChild(el('circle', { r: (R * 0.13).toFixed(2), fill: 'rgba(12,9,4,.9)', stroke: 'rgba(255,232,180,.34)', 'stroke-width': 0.7 }));
+  // 键槽：轮毂上一道方口，转起来一眼就看出在转
+  web.appendChild(el('rect', {
+    x: (-R * 0.055).toFixed(2), y: (-R * 0.185).toFixed(2),
+    width: (R * 0.11).toFixed(2), height: (R * 0.075).toFixed(2),
+    fill: 'rgba(12,9,4,.95)',
+  }));
+  // 铆钉
+  for (let i = 0; i < spokes; i++) {
+    const a = ((i + 0.5) / spokes) * Math.PI * 2;
+    web.appendChild(el('circle', {
+      r: (R * 0.036).toFixed(2), fill: 'rgba(255,238,196,.72)',
+      cx: (Math.cos(a) * R * 0.235).toFixed(2), cy: (Math.sin(a) * R * 0.235).toFixed(2),
+    }));
+  }
+  s.appendChild(web);
+  return s;
 }
 
-// 一层轮廓。top 层才画轮辐高光、铆钉与轴销。
-// grad 是这一层用的渐变 id —— 明暗必须烘进渐变里，不能用 CSS filter：
-// 3D 场景里给切片加 filter 会把它从父级的 3D 上下文里摘出去，整组齿轮直接消失。
-function gearSlice(R, teeth, holes, top, grad) {
-  const rRoot = R * 0.815;
-  const rBore = R * 0.155;
-  const rHole = R * 0.148;
-  const rHoleC = R * 0.475;
-  const VB = (R * 1.14).toFixed(2);
-  let d = gearPath(R, rRoot, teeth) + holePath(0, 0, rBore);
-  for (let i = 0; i < holes; i++) {
-    const a = (i / holes) * Math.PI * 2 + Math.PI / holes;
-    d += holePath(Math.cos(a) * rHoleC, Math.sin(a) * rHoleC, rHole);
-  }
-  const body = `<path d="${d}" fill-rule="evenodd" fill="url(#${grad})"/>`;
-  if (!top) return `<svg viewBox="-${VB} -${VB} ${VB * 2} ${VB * 2}">${body}</svg>`;
-
-  const sw = (R * 0.030).toFixed(2);
-  let ex = `<path d="${d}" fill-rule="evenodd" fill="none" stroke="rgba(255,240,206,.88)"` +
-           ` stroke-width="${sw}" stroke-linejoin="round"/>`;
-  // 轮缘沟槽 + 轮毂盘
-  ex += `<circle r="${(rRoot * 0.93).toFixed(2)}" fill="none" stroke="rgba(255,238,196,.26)" stroke-width="${(R * 0.016).toFixed(2)}"/>`;
-  ex += `<circle r="${(R * 0.285).toFixed(2)}" fill="none" stroke="rgba(232,196,116,.55)" stroke-width="${(R * 0.020).toFixed(2)}"/>`;
-  // 铆钉：轮毂盘一圈
-  for (let i = 0; i < holes; i++) {
-    const a = (i / holes) * Math.PI * 2;
-    ex += `<circle cx="${(Math.cos(a) * R * 0.235).toFixed(2)}" cy="${(Math.sin(a) * R * 0.235).toFixed(2)}"` +
-          ` r="${(R * 0.032).toFixed(2)}" fill="rgba(255,246,222,.72)"/>`;
-  }
-  // 键槽：轴孔上开一道方口，一眼看出是装在轴上的
-  const kw = R * 0.055, kh = R * 0.075;
-  ex += `<rect x="${(-kw).toFixed(2)}" y="${(-rBore - kh * 0.6).toFixed(2)}" width="${(kw * 2).toFixed(2)}" height="${(kh * 1.5).toFixed(2)}" fill="rgba(18,13,7,.85)"/>`;
-  return `<svg viewBox="-${VB} -${VB} ${VB * 2} ${VB * 2}">${body}${ex}</svg>`;
+// 不随轮子转的那层：定向高光 + 轮毂周围的暗角，铜面这才像被灯照着
+function gearShine(R, size) {
+  const s = el('svg', {
+    class: 'gp gp-shine', viewBox: `${-size / 2} ${-size / 2} ${size} ${size}`,
+    width: size, height: size,
+  });
+  const id = 'sh' + Math.random().toString(36).slice(2, 8);
+  const defs = el('defs');
+  const lg = el('linearGradient', { id, x1: '0.12', y1: '0', x2: '0.9', y2: '1' });
+  lg.appendChild(el('stop', { offset: '0', 'stop-color': '#fff6dc', 'stop-opacity': '0.42' }));
+  lg.appendChild(el('stop', { offset: '0.38', 'stop-color': '#ffdca0', 'stop-opacity': '0.10' }));
+  lg.appendChild(el('stop', { offset: '0.66', 'stop-color': '#000000', 'stop-opacity': '0.22' }));
+  lg.appendChild(el('stop', { offset: '1', 'stop-color': '#000000', 'stop-opacity': '0.42' }));
+  defs.appendChild(lg);
+  const rg = el('radialGradient', { id: id + 'a' });
+  rg.appendChild(el('stop', { offset: '0.30', 'stop-color': '#000', 'stop-opacity': '0.55' }));
+  rg.appendChild(el('stop', { offset: '0.62', 'stop-color': '#000', 'stop-opacity': '0' }));
+  defs.appendChild(rg);
+  s.appendChild(defs);
+  s.appendChild(el('circle', { r: (R * 1.02).toFixed(2), fill: `url(#${id})` }));
+  s.appendChild(el('circle', { r: (R * 0.95).toFixed(2), fill: `url(#${id}a)` }));
+  return s;
 }
 
-const SLICES = 7;   // 一枚齿轮叠几层
+const PALETTE = {
+  brass: { face: '#c8993f', edge: '#7c5a1e', deep: '#3a2909', hub: '#8c6a2a' },
+  bronze: { face: '#b8763c', edge: '#6e4319', deep: '#331d06', hub: '#7d4f22' },
+  steel: { face: '#8e9aa6', edge: '#4a545f', deep: '#1d232a', hub: '#5d6873' },
+};
 
-function buildGear3D(stage, o, unit) {
-  const { cx, cy, teeth, R, holes, dur, ccw, depth } = o;
-  const size = R * 2.28;                       // 含 viewBox 余量
-  const g = document.createElement('div');
-  g.className = 'g3';
-  g.style.width = (size * unit) + '%';
-  g.style.height = (size * unit) + '%';
-  g.style.left = ((cx - size / 2) * unit + 50) + '%';
-  g.style.top = ((cy - size / 2) * unit + 50) + '%';
+// 把 #rrggbb 按系数压暗
+function shade(hex, k) {
+  const n = parseInt(hex.slice(1), 16);
+  const r = Math.round(((n >> 16) & 255) * k);
+  const g = Math.round(((n >> 8) & 255) * k);
+  const b = Math.round((n & 255) * k);
+  return `rgb(${r},${g},${b})`;
+}
+
+function buildOneGear(stage, g) {
+  const pal = PALETTE[g.mat];
+  const size = g.R * 2.5;
+  const holder = document.createElement('div');
+  holder.className = 'gear';
+  holder.style.transform =
+    `translate3d(${g.cx.toFixed(2)}px, ${g.cy.toFixed(2)}px, ${(g.z || 0).toFixed(2)}px)` +
+    ` rotate(${(g.phase * 180 / Math.PI).toFixed(2)}deg)`;
 
   const spin = document.createElement('div');
-  spin.className = 'g3-spin' + (ccw ? ' ccw' : '');
-  spin.style.setProperty('--dur', dur.toFixed(2) + 's');
+  spin.className = 'gear-spin' + (g.ccw ? ' ccw' : '');
+  spin.style.setProperty('--dur', g.dur.toFixed(2) + 's');
 
-  const th = R * 0.24;                          // 轮厚（视口单位）
-  for (let i = 0; i < SLICES; i++) {
-    const t = i / (SLICES - 1);
-    const s = document.createElement('div');
-    s.className = 'g3-slice';
-    s.style.transform = `translateZ(${((t - 1) * th * unit * 4.0).toFixed(2)}px)`;
-    s.innerHTML = gearSlice(R, teeth, holes, i === SLICES - 1, 'gSlice' + i);
-    spin.appendChild(s);
+  // 薄片自下而上：越靠后越暗，最上一片带辐板细节
+  const N = g.plates;
+  const rRoot = g.R * 0.78;
+  for (let i = 0; i < N; i++) {
+    const t = i / (N - 1);
+    const top = i === N - 1;
+    const k = 0.34 + t * 0.66;
+    const plate = gearPlate({
+      R: g.R, rRoot, teeth: g.teeth, spokes: g.spokes, size,
+      fill: top ? pal.face : shade(pal.edge, k),
+      stroke: top ? 'rgba(255,238,200,.55)' : (i === 0 ? shade(pal.deep, 1) : null),
+      top, hub: pal.hub,
+    });
+    // 位置用 left/top 摆（px），transform 里只留 Z ——
+    // SVG 根元素上的百分比 translate 会按 viewBox 解析，整幅图会被推出画面
+    plate.style.left = (-size / 2).toFixed(1) + 'px';
+    plate.style.top = (-size / 2).toFixed(1) + 'px';
+    plate.style.transform = `translateZ(${(t * g.thick - g.thick / 2).toFixed(2)}px)`;
+    spin.appendChild(plate);
   }
-  // 轴：从轮心穿出去一小截
-  const axle = document.createElement('i');
-  axle.className = 'g3-axle';
-  axle.style.setProperty('--r', (R * 0.30 * unit) + '%');
-  spin.appendChild(axle);
+  holder.appendChild(spin);
 
-  g.appendChild(spin);
-  g.style.zIndex = String(10 + (depth | 0));
-  stage.appendChild(g);
+  // 高光片：不转
+  const sh = gearShine(g.R, size);
+  sh.style.left = (-size / 2).toFixed(1) + 'px';
+  sh.style.top = (-size / 2).toFixed(1) + 'px';
+  sh.style.transform = `translateZ(${(g.thick / 2 + 0.4).toFixed(2)}px)`;
+  holder.appendChild(sh);
+
+  // 轴：从轮心往观者方向伸出一小截
+  const axle = document.createElement('i');
+  axle.className = 'gear-axle';
+  axle.style.width = axle.style.height = (g.R * 0.30).toFixed(1) + 'px';
+  axle.style.transform = `translate(-50%,-50%) translateZ(${(g.thick / 2 + 3.2).toFixed(2)}px)`;
+  holder.appendChild(axle);
+
+  stage.appendChild(holder);
 }
 
 function buildGearRig() {
@@ -138,57 +213,57 @@ function buildGearRig() {
   if (!stage) return null;
   stage.innerHTML = '';
 
-  // 渐变一份就够：同一文档里的 url(#id) 各 svg 都引得到
-  const defs = el('svg', { class: 'gear-defs', 'aria-hidden': 'true' });
-  const D = el('defs');
-  const grad = (id, stops, attrs) => {
-    const lg = el('linearGradient', { id, x1: '0.1', y1: '0', x2: '0.9', y2: '1', ...attrs });
-    for (const [off, c] of stops) lg.appendChild(el('stop', { offset: off, 'stop-color': c }));
-    D.appendChild(lg);
-  };
-  // 顶面的铜色；下面每一层按深度整体压暗，叠出来就是一圈有明暗过渡的轮缘
-  const FACE = [['0', 0x7e5f27], ['0.30', 0xe4ba66], ['0.50', 0x8a6a2c],
-                ['0.72', 0xf4d68e], ['1', 0x6b4f20]];
-  const dim = (hex, k) => '#' + [16, 8, 0].map(sh =>
-    Math.round(((hex >> sh) & 255) * k).toString(16).padStart(2, '0')).join('');
-  for (let i = 0; i < SLICES; i++) {
-    const k = 0.24 + (i / (SLICES - 1)) * 0.76;
-    grad('gSlice' + i, FACE.map(([o, c]) => [o, dim(c, k)]));
-  }
-  grad('progGrad', [['0', '#8c6f36'], ['0.55', '#f5d68d'], ['1', '#fff6de']]);
-  defs.appendChild(D);
-  stage.appendChild(defs);
-
-  // ---- 轮系：节圆半径取齿顶圆的 0.90，中心距 = 两节圆之和 ----
-  const VB = 250;                   // 舞台的视口边长（单位）
-  const unit = 100 / VB;            // 单位 -> 百分比
-  const pitch = (R) => R * 0.90;
+  // 轮系：节圆半径取齿顶圆的 0.88，中心距 = 两节圆之和
+  const pitch = (R) => R * 0.88;
   const G = [
-    { teeth: 24, R: 50, holes: 6, ccw: false, depth: 3 },                       // 主轮
-    { teeth: 15, R: 31.25, holes: 5, ccw: true, from: 0, ang: -0.66, depth: 2 },
-    { teeth: 11, R: 22.9, holes: 4, ccw: true, from: 0, ang: 2.30, depth: 2 },
-    { teeth: 9, R: 18.75, holes: 0, ccw: false, from: 2, ang: 3.58, depth: 1 },
+    { teeth: 30, R: 62, spokes: 6, ccw: false, mat: 'brass', thick: 15, plates: 7 },
+    { teeth: 17, R: 36, spokes: 5, ccw: true, from: 0, ang: -0.66, mat: 'steel', thick: 12, plates: 6 },
+    { teeth: 12, R: 26, spokes: 4, ccw: true, from: 0, ang: 2.32, mat: 'bronze', thick: 11, plates: 6 },
+    { teeth: 9, R: 20, spokes: 4, ccw: false, from: 2, ang: 3.66, mat: 'steel', thick: 9, plates: 5, z: -16 },
   ];
-  const BASE_T = 15.0, BASE_N = 24;
-  G[0].cx = 0; G[0].cy = 0;
+  // 主轮 30 齿转一圈 16 秒，其余按齿数反比推
+  const BASE_T = 16.0, BASE_N = 30;
+  G[0].cx = 0; G[0].cy = 0; G[0].phase = 0;
   for (const g of G) {
     if (g.from !== undefined) {
       const p = G[g.from];
       const d = pitch(p.R) + pitch(g.R);
       g.cx = p.cx + Math.cos(g.ang) * d;
       g.cy = p.cy + Math.sin(g.ang) * d;
+      // 相位：让自己的一个齿槽正对着主动轮 —— 齿槽在两齿之间，故偏半个齿距
+      g.phase = (g.ang + Math.PI) - Math.PI / g.teeth;
     }
     g.dur = BASE_T * (g.teeth / BASE_N);
-    buildGear3D(stage, g, unit);
   }
+  // 从动轮全都往一侧铺，整组的重心并不在主轮上。
+  // 按包围盒把轮系挪回舞台正中，才和外面的度盘同心。
+  let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+  for (const g of G) {
+    x0 = Math.min(x0, g.cx - g.R); x1 = Math.max(x1, g.cx + g.R);
+    y0 = Math.min(y0, g.cy - g.R); y1 = Math.max(y1, g.cy + g.R);
+  }
+  const ox = (x0 + x1) / 2, oy = (y0 + y1) / 2;
+  for (const g of G) { g.cx -= ox; g.cy -= oy; buildOneGear(stage, g); }
 
-  // ---- 度盘与进度环：浮在轮系上方一层 ----
-  const dial = el('svg', { class: 'gear-dial', viewBox: '-125 -125 250 250', 'aria-hidden': 'true' });
+  // ---- 度盘与进度环：浮在轮系前面一层，一并跟着舞台后仰
+  const size = 300;
+  const dial = el('svg', {
+    class: 'gear-dial', viewBox: `${-size / 2} ${-size / 2} ${size} ${size}`,
+    width: size, height: size,
+  });
+  const defs = el('defs');
+  const grad = el('linearGradient', { id: 'progGrad', x1: '0', y1: '0', x2: '1', y2: '1' });
+  grad.appendChild(el('stop', { offset: '0', 'stop-color': '#8c6f36' }));
+  grad.appendChild(el('stop', { offset: '0.55', 'stop-color': '#f5d68d' }));
+  grad.appendChild(el('stop', { offset: '1', 'stop-color': '#fff6de' }));
+  defs.appendChild(grad);
+  dial.appendChild(defs);
+
   const ticks = el('g');
   for (let i = 0; i < 72; i++) {
     const a = (i / 72) * Math.PI * 2;
     const major = i % 6 === 0;
-    const r0 = major ? 101 : 105, r1 = 110;
+    const r0 = major ? 121 : 126, r1 = 132;
     ticks.appendChild(el('line', {
       class: 'tick' + (major ? ' tick-major' : ''),
       x1: (Math.cos(a) * r0).toFixed(2), y1: (Math.sin(a) * r0).toFixed(2),
@@ -196,7 +271,8 @@ function buildGearRig() {
     }));
   }
   dial.appendChild(ticks);
-  const PR = 116;
+
+  const PR = 138;
   const circ = 2 * Math.PI * PR;
   dial.appendChild(el('circle', { class: 'prog-track', r: PR }));
   const arc = el('circle', {
@@ -205,6 +281,13 @@ function buildGearRig() {
     'stroke-dashoffset': circ.toFixed(2),
   });
   dial.appendChild(arc);
+  // 绝对定位下用 margin 做居中：既落在舞台正中，又不必在 SVG 上写
+  // 百分比 translate（那个是按 viewBox 解析的）
+  dial.style.left = '50%';
+  dial.style.top = '50%';
+  dial.style.marginLeft = (-size / 2) + 'px';
+  dial.style.marginTop = (-size / 2) + 'px';
+  dial.style.transform = 'translateZ(30px)';
   stage.appendChild(dial);
 
   return {
@@ -256,7 +339,6 @@ class World {
     this.dayNight.climate = L.climate;
     this.dayNight.apply(this.dayNight.hour, true);
 
-    const P = (a, b) => a + (b - a);
     this.terrain = await boot.step(0.46, () => new Terrain(scene));
     // 先登记台基，再造地形网格，最后落成建筑
     this.village = await boot.step(0.56, () => buildVillage(scene, this.terrain));
@@ -386,6 +468,7 @@ async function main() {
 main().catch(err => {
   console.error(err);
   window.__ERR = String(err && err.message || err);
+  // 载入页平时不出文字；只有真卡壳了才在偈语那一行报错
   const h = document.querySelector('#loader .loader-verse');
   if (h) {
     h.innerHTML = '机关卡壳了：<br><span style="font-size:11px;opacity:.7">' +

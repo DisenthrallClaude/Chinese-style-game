@@ -190,6 +190,41 @@ export class Audio {
     this.noise({ freq: 5200, d: 0.10, gain: 0.16, sweep: 0.12, q: 1.0 });
     this.tone(88, { type: 'sawtooth', d: 0.34, gain: 0.14, slide: 0.4 });
   }
+  /* ---- 六气 ---- */
+  // 罡风：一记从低吹到高的宽带气声
+  gale() {
+    if (!this._throttle('gale', 150)) return;
+    this.noise({ freq: 420, d: 0.32, gain: 0.13, q: 0.5, sweep: 3.4, type: 'bandpass' });
+    this.tone(190, { type: 'sine', d: 0.26, gain: 0.05, slide: 2.2 });
+  }
+  // 瘴：闷闷的一声「噗」，尾巴上带一点粘
+  miasma() {
+    if (!this._throttle('miasma', 220)) return;
+    this.noise({ freq: 240, d: 0.42, gain: 0.16, type: 'lowpass', q: 0.8, sweep: 0.35 });
+    this.tone(96, { type: 'sine', d: 0.36, gain: 0.10, slide: 0.55 });
+  }
+  // 蛊：细密的振翅，两个相近的频率打拍
+  swarm() {
+    if (!this._throttle('swarm', 160)) return;
+    this.tone(2100, { type: 'sawtooth', d: 0.16, gain: 0.030, detune: 14 });
+    this.tone(2140, { type: 'sawtooth', d: 0.16, gain: 0.030, detune: -22 });
+    this.noise({ freq: 3400, d: 0.14, gain: 0.045, q: 6 });
+  }
+  // 幽影：一记下沉的空腔共鸣
+  umbra() {
+    if (!this._throttle('umbra', 240)) return;
+    this.tone(126, { type: 'sine', d: 0.55, gain: 0.13, slide: 0.42 });
+    this.tone(189, { type: 'triangle', d: 0.44, gain: 0.05, slide: 0.44 });
+    this.noise({ freq: 620, d: 0.36, gain: 0.045, type: 'lowpass', sweep: 0.25 });
+  }
+  // 虚空：反过来的滑音 —— 声音是被吸进去的
+  warp() {
+    if (!this._throttle('warp', 240)) return;
+    this.tone(140, { type: 'sine', d: 0.5, gain: 0.11, slide: 5.2 });
+    this.tone(1180, { type: 'triangle', d: 0.34, gain: 0.045, slide: 0.18 });
+    this.noise({ freq: 5200, d: 0.30, gain: 0.05, q: 2.0, sweep: 0.08 });
+  }
+
   hit() {
     if (!this._throttle('hit', 55)) return;
     this.noise({ freq: 420, d: 0.07, gain: 0.09, type: 'lowpass' });

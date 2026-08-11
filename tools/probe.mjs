@@ -7,7 +7,11 @@ const waitAfter = parseInt(process.argv[3] || '2500', 10);
 const shot = process.argv[4] || '';
 const script = scriptFile && fs.existsSync(scriptFile) ? fs.readFileSync(scriptFile, 'utf8') : '';
 
+// 沙盒里 playwright 缓存的浏览器版本号有时与包内写死的对不上；
+// PW_CHROME 给一个出口，直接指到实际存在的那份可执行文件
+const exe = process.env.PW_CHROME || undefined;
 const browser = await chromium.launch({
+  executablePath: exe,
   args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--use-gl=angle',
          '--disable-gpu-sandbox', '--no-sandbox', '--ignore-gpu-blocklist'],
 });

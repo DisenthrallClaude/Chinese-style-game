@@ -6,7 +6,7 @@ import {
   buildBeastGeometry, makeBeastMaterial, makeBeastOutlineMaterial, beastUniforms,
   HealthBars, GroundBlobs,
 } from './beasts.js';
-import { PATHS, HEART, GATES, walkY, LEVEL, distToRiver } from '../world/layout.js';
+import { PATHS, HEART, GATES } from '../world/layout.js';
 
 const MAX_PER_TYPE = 46;
 
@@ -75,14 +75,11 @@ export class Enemy {
     this.freeze = 0;
     this.stun = 0;
     this.burn = 0; this.burnT = 0;
-    // 玄六气带来的状态
-    this.venom = 0; this.venomT = 0;      // 瘴：持续真伤
-    this.sunder = 0; this.sunderT = 0;    // 蚀甲：皮甲被毒瘴啃薄
-    this.vuln = 0; this.vulnT = 0;        // 易伤：幽冥幡缠身，受创加重
-    this.gu = 0; this.guT = 0;            // 蛊：层数越叠越疼
-    this.guDmg = 0; this.guHop = 0; this.guMax = 0;
-    this.warpT = 0;                       // 刚被须弥壶卷过：留个尾迹的计时
-    this.iceSlip = 0;                     // 冰面打滑的加速
+    // ---- 六气加的几种身上带的毛病 ----
+    this.venom = 0; this.venomT = 0; this.venomStack = 0;  // 毒：层层加深
+    this.infect = 0; this.infectDps = 0;                   // 蛊：附身、传染
+    this.infectVuln = 0; this.infectSpread = 0;
+    this.shred = 0; this.shredT = 0;                       // 暗：皮甲朽坏
     this.flash = 0;
     this.dying = 0;
     this.dead = false;
@@ -99,7 +96,7 @@ export class Enemy {
   get speed() {
     if (this.stun > 0 || this.freeze > 0) return 0;
     const s = this.slow > 0 && !this.traits.includes('unslowable') ? (1 - this.slow) : 1;
-    return this.baseSpeed * s * (1 + this.buff * 0.25 + (this.iceSlip || 0));
+    return this.baseSpeed * s * (1 + this.buff * 0.25);
   }
 }
 
@@ -168,8 +165,7 @@ export class EnemyManager {
       y = Math.max(g, lerp(gate.y || 24, 2, t)) + e.flyH + Math.sin(e.bob + performance.now() * 0.0016) * 0.9;
       e.angle = Math.atan2(HEART.x - x, HEART.z - z);
     } else {
-      // 桥面另有一份高程：过河时踩的是桥，不是河床
-      y = walkY(this.terrain.heightFast(x, z), x, z);
+      y = this.terrain.heightFast(x, z);
       e.angle = Math.atan2(tx, tz);
     }
     e.x = x; e.y = y; e.z = z;
@@ -178,16 +174,26 @@ export class EnemyManager {
   damage(e, amount, element, opts = {}) {
     if (!e.alive) return 0;
     const mult = elementMult(element, e.el);
-    // 幽冥幡的易伤是乘在相克之后的：先看属性对不对，再看有没有被幡影罩住
-    let dmg = amount * mult * (1 + (e.vuln || 0));
+    // 中蛊者身上开着口子，受创加重
+    let dmg = amount * mult * (1 + e.infectVuln);
     if (!opts.trueDamage) {
-      const ar = Math.max(0, e.armor - (e.sunder || 0));
-      dmg = Math.max(dmg * 0.16, dmg - ar);
+      // 皮甲被暗蚀朽坏了多少，就少挡多少
+      const armor = e.armor * (1 - e.shred);
+      dmg = Math.max(dmg * 0.16, dmg - armor);
     }
     e.hp -= dmg;
     e.flash = Math.min(1, e.flash + 0.55);
     if (e.hp <= 0) this.kill(e);
     return dmg;
+  }
+
+  // 罡风把凶兽往回吹；boss 沉，吹不动那么远
+  push(e, amount) {
+    if (!e.alive || amount <= 0) return;
+    // 立不住的（被震慑／冻住）反而吹得更远；boss 只吃三成
+    let k = e.boss ? 0.32 : 1;
+    if (e.stun > 0 || e.freeze > 0) k *= 1.6;
+    e.dist = Math.max(0, e.dist - amount * k);
   }
 
   kill(e, silent = false) {
@@ -196,22 +202,21 @@ export class EnemyManager {
     e.hp = 0;
     this.killCount++;
     if (!silent && this.game) this.game.onKill(e);
-    // 蛊：宿主一死，虫子带着已叠的层数扑向最近的一只
-    if (e.gu > 0 && e.guHop > 0) {
-      let best = null, bd = e.guHop * e.guHop;
+    // 蛊：宿主一死，虫就散出去找下一个
+    if (e.infect > 0 && e.infectSpread > 0 && !e._noGu) {
+      const r = e.infectSpread;
+      let n = 0;
       for (const o of this.all) {
-        if (o === e || !o.alive) continue;
+        if (o === e || !o.alive || o.infect > 0) continue;
         const dx = o.x - e.x, dz = o.z - e.z;
-        const d = dx * dx + dz * dz;
-        if (d < bd) { bd = d; best = o; }
+        if (dx * dx + dz * dz > r * r) continue;
+        o.infect = e.infect * 0.8;
+        o.infectDps = e.infectDps * 0.72;
+        o.infectVuln = e.infectVuln * 0.72;
+        o.infectSpread = r * 0.7;
+        if (++n >= 3) break;
       }
-      if (best) {
-        best.gu = Math.min(e.guMax || e.gu, best.gu + e.gu);
-        best.guT = Math.max(best.guT, 6.0);
-        best.guDmg = Math.max(best.guDmg, e.guDmg);
-        best.guHop = e.guHop; best.guMax = e.guMax;
-        if (this.game) this.game.onGuHop(e, best);
-      }
+      if (n && this.game) this.game.onGuSpread(e, n);
     }
     // 相柳：斩其一首，余首犹动
     if (e.traits.includes('split') && !e._noSplit) {
@@ -223,19 +228,6 @@ export class EnemyManager {
         if (c) { c._noSplit = true; c.scale *= 0.7; }
       }
     }
-  }
-
-  // 击退 / 回溯：沿兽道往回推。boss 身沉，只吃四成
-  shove(e, dist, opts = {}) {
-    if (!e.alive || dist <= 0) return 0;
-    let k = e.boss ? 0.34 : 1;
-    // 「不可减速」挡得住风，挡不住须弥壶 —— 空之气连路一起卷走
-    if (!opts.ignoreResist && e.traits.includes('unslowable')) k *= 0.45;
-    const before = e.dist;
-    e.dist = Math.max(0, e.dist - dist * k);
-    if (opts.warp) e.warpT = 0.5;
-    this._place(e, 0);
-    return before - e.dist;
   }
 
   // 范围查询（怪物数量有限，线性即可）
@@ -267,7 +259,6 @@ export class EnemyManager {
   update(dt, t) {
     beastUniforms.uTime.value = t;
     const G = this.game;
-    const iceRule = LEVEL && LEVEL.rule && LEVEL.rule.id === 'ice' ? LEVEL.rule : null;
 
     // 九尾狐的光环
     let auras = null;
@@ -297,12 +288,6 @@ export class EnemyManager {
       if (e.alive) {
         // 状态衰减
         if (e.slowT > 0) { e.slowT -= dt; if (e.slowT <= 0) e.slow = 0; }
-        // 幽都寒渊：踏上冻河与冰道的，脚下打滑跑得飞快；一旦被冻住又格外难挣
-        if (iceRule) {
-          const onIce = distToRiver(e.x, e.z) < iceRule.nearRiver;
-          e.iceSlip = onIce ? iceRule.speedBonus : 0;
-          if (onIce && e.slow > 0) e.slow = Math.min(0.92, e.slow * (1 + iceRule.slowBonus));
-        }
         if (e.freeze > 0) e.freeze -= dt;
         if (e.stun > 0) e.stun -= dt;
         if (e.burnT > 0) {
@@ -310,20 +295,20 @@ export class EnemyManager {
           this.damage(e, e.burn * dt, 'fire', { trueDamage: true });
           if (e.burnT <= 0) e.burn = 0;
         }
-        // 瘴 / 蚀甲 / 易伤 / 蛊
+        // 毒：按层数吃伤害，层数自己衰减
         if (e.venomT > 0) {
           e.venomT -= dt;
-          this.damage(e, e.venom * dt, 'poison', { trueDamage: true });
-          if (e.venomT <= 0) e.venom = 0;
+          this.damage(e, e.venom * e.venomStack * dt, 'poison', { trueDamage: true });
+          if (e.venomT <= 0) { e.venom = 0; e.venomStack = 0; }
         }
-        if (e.sunderT > 0) { e.sunderT -= dt; if (e.sunderT <= 0) e.sunder = 0; }
-        if (e.vulnT > 0) { e.vulnT -= dt; if (e.vulnT <= 0) e.vuln = 0; }
-        if (e.guT > 0) {
-          e.guT -= dt;
-          this.damage(e, e.gu * e.guDmg * dt, 'gu', { trueDamage: true });
-          if (e.guT <= 0) { e.gu = 0; e.guDmg = 0; }
+        // 蛊：附身期间持续啃噬
+        if (e.infect > 0) {
+          e.infect -= dt;
+          this.damage(e, e.infectDps * dt, 'gu', { trueDamage: true });
+          if (e.infect <= 0) { e.infectDps = 0; e.infectVuln = 0; e.infectSpread = 0; }
         }
-        if (e.warpT > 0) e.warpT -= dt;
+        // 暗：皮甲慢慢长回来
+        if (e.shredT > 0) { e.shredT -= dt; if (e.shredT <= 0) e.shred = 0; }
         if (e.traits.includes('regen')) e.hp = Math.min(e.maxHp, e.hp + e.maxHp * 0.006 * dt);
 
         // 行进
@@ -379,7 +364,7 @@ export class EnemyManager {
         pool.aState.array[i * 3 + 2] = e.dying;
         // 接地阴影：飞行的挂在地面上、随高度扩散变淡
         if (e.alive || e.dying > 0) {
-          const gy = walkY(this.terrain.heightFast(e.x, e.z), e.x, e.z);
+          const gy = this.terrain.heightFast(e.x, e.z);
           const lift = clamp(e.y - gy, 0, 26);
           const spread = 1 + lift * 0.075;
           this.blobs.add(e.x, gy, e.z, (1.5 + e.scale * 1.5) * spread * s,

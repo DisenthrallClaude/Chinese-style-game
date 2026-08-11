@@ -34,20 +34,23 @@ function boltGeo() {
   return out;
 }
 
-// 毒瓮：束口鼓腹的小陶罐，颈上还缠着一道封绳
-function jarGeo() {
-  const list = [
-    T(sphere(0.30, 10, 8, 1.0), 0, 0, 0, 0, 0, 0),
-    T(cyl(0.12, 0.19, 0.22, 8, 1.0), 0, 0.30, 0),
-    T(cyl(0.17, 0.15, 0.07, 8, 1.0), 0, 0.42, 0),
-    T(cyl(0.32, 0.32, 0.05, 10, 1.0), 0, 0.02, 0),
-  ];
+// 蛊虫：分节的小身子 + 一对薄翅
+function guGeo() {
+  const parts = [];
+  for (let i = 0; i < 3; i++) {
+    const r = 0.10 - i * 0.02;
+    parts.push(T(sphere(r, 7, 5, 1.4), 0, 0, 0.10 - i * 0.11));
+  }
+  for (const s of [-1, 1]) {
+    parts.push(T(box(0.20, 0.012, 0.10, 1.4), s * 0.12, 0.05, 0.02, 0, 0, s * 0.35));
+  }
+  parts.push(T(cone(0.035, 0.14, 4, 1.4), 0, 0, 0.20, Math.PI / 2, 0, 0));
   let c = 0, ic = 0;
-  for (const g of list) { c += g.attributes.position.count; ic += g.index.count; }
+  for (const g of parts) { c += g.attributes.position.count; ic += g.index.count; }
   const pos = new Float32Array(c * 3), uv = new Float32Array(c * 2);
   const idx = new Uint32Array(ic);
   let vo = 0, io = 0;
-  for (const g of list) {
+  for (const g of parts) {
     pos.set(g.attributes.position.array, vo * 3);
     uv.set(g.attributes.uv.array, vo * 2);
     const gi = g.index.array;
@@ -70,19 +73,12 @@ export class Projectiles {
     this.max = 220;
     this.boltMesh = new THREE.InstancedMesh(boltGeo(), M.woodDark, this.max);
     this.stoneMesh = new THREE.InstancedMesh(new THREE.IcosahedronGeometry(0.42, 0), M.stone, 90);
-    // 毒瓮：一只封了口的小陶罐，飞在空中还渗着绿气
-    this.jarMat = new THREE.MeshStandardMaterial({
-      color: 0x4a5424, emissive: new THREE.Color(0xa8e030), emissiveIntensity: 0.55,
-      roughness: 0.72, metalness: 0.08,
-    });
-    this.jarMesh = new THREE.InstancedMesh(jarGeo(), this.jarMat, 60);
-    // 蛊：一团挤在一起的虫子，通体幽紫
-    this.guMat = new THREE.MeshStandardMaterial({
-      color: 0x3a1c48, emissive: new THREE.Color(0xc86ae8), emissiveIntensity: 1.6,
-      roughness: 0.5, metalness: 0.2,
-    });
-    this.guMesh = new THREE.InstancedMesh(new THREE.IcosahedronGeometry(0.34, 1), this.guMat, 80);
-    for (const m of [this.boltMesh, this.stoneMesh, this.jarMesh, this.guMesh]) {
+    // 蛊虫：一只发着光的小虫，飞得歪歪扭扭
+    this.guMesh = new THREE.InstancedMesh(guGeo(), M.guCore || new THREE.MeshStandardMaterial({
+      color: 0x2c0a24, emissive: new THREE.Color(0xe05ab4), emissiveIntensity: 2.6,
+      roughness: 0.28, metalness: 0.4,
+    }), 60);
+    for (const m of [this.boltMesh, this.stoneMesh, this.guMesh]) {
       m.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
       m.castShadow = true;
       m.frustumCulled = false;
@@ -107,10 +103,11 @@ export class Projectiles {
       tx: target.x, ty: target.y + 1.0, tz: target.z,
       spin: Math.random() * 6.28, tower: opts.tower,
       burn: opts.burn || 0, burnTime: opts.burnTime || 0,
+      // 瘴 / 蛊
       venom: opts.venom || 0, venomTime: opts.venomTime || 0,
-      sunder: opts.sunder || 0, poolTime: opts.poolTime || 0,
-      stacks: opts.stacks || 0, stackDmg: opts.stackDmg || 0,
-      stackMax: opts.stackMax || 0, hop: opts.hop || 0,
+      infect: opts.infect || 0, infectDps: opts.infectDps || 0,
+      vuln: opts.vuln || 0, spread: opts.spread || 0,
+      wob: Math.random() * 6.28,
     });
   }
 
@@ -140,6 +137,15 @@ export class Projectiles {
         p.z += (dz / dist) * step;
         const k2 = clamp((travelled + step) / Math.max(0.001, total), 0, 1);
         p.y = lerp(p.sy, p.ty, k2) + Math.sin(k2 * Math.PI) * (total * 0.28 + 2.5);
+      } else if (p.kind === 'gu') {
+        // 蛊虫不走直线：主方向上叠一点侧向的摆
+        p.wob += dt * 9;
+        const ux = dx / dist, uy = dy / dist, uz = dz / dist;
+        const sx = -uz, sz = ux;                 // 水平法向
+        const w = Math.sin(p.wob) * 0.55;
+        p.x += (ux + sx * w) * step;
+        p.y += (uy + Math.cos(p.wob * 0.7) * 0.22) * step;
+        p.z += (uz + sz * w) * step;
       } else {
         p.x += (dx / dist) * step;
         p.y += (dy / dist) * step;
@@ -149,26 +155,22 @@ export class Projectiles {
     }
 
     // 写实例
-    let nb = 0, ns = 0, nj = 0, ng = 0;
+    let nb = 0, ns = 0, ng = 0;
     for (const p of this.list) {
-      this._p.set(p.x, p.y, p.z);
       if (p.kind === 'bolt') {
+        this._p.set(p.x, p.y, p.z);
         this._d.set(p.tx - p.x, p.ty - p.y, p.tz - p.z).normalize();
         this._q.setFromUnitVectors(new THREE.Vector3(0, 0, 1), this._d);
         this._m.compose(this._p, this._q, this._s);
         if (nb < this.max) this.boltMesh.setMatrixAt(nb++, this._m);
-      } else if (p.kind === 'jar') {
-        this._q.setFromEuler(new THREE.Euler(p.spin * 0.6, p.spin, p.spin * 0.4));
-        this._m.compose(this._p, this._q, this._s);
-        if (nj < 60) this.jarMesh.setMatrixAt(nj++, this._m);
       } else if (p.kind === 'gu') {
-        // 虫团一路在抖
-        const w = 1 + Math.sin(p.spin * 3.1) * 0.22;
-        this._q.setFromEuler(new THREE.Euler(p.spin * 1.7, p.spin * 2.3, 0));
-        this._m.compose(this._p, this._q, this._s.set(w, 2 - w, w));
-        if (ng < 80) this.guMesh.setMatrixAt(ng++, this._m);
-        this._s.set(1, 1, 1);
+        this._p.set(p.x, p.y, p.z);
+        this._d.set(p.tx - p.x, p.ty - p.y, p.tz - p.z).normalize();
+        this._q.setFromUnitVectors(new THREE.Vector3(0, 0, 1), this._d);
+        this._m.compose(this._p, this._q, this._s);
+        if (ng < 60) this.guMesh.setMatrixAt(ng++, this._m);
       } else {
+        this._p.set(p.x, p.y, p.z);
         this._q.setFromEuler(new THREE.Euler(p.spin, p.spin * 0.7, 0));
         this._m.compose(this._p, this._q, this._s);
         if (ns < 90) this.stoneMesh.setMatrixAt(ns++, this._m);
@@ -176,17 +178,14 @@ export class Projectiles {
     }
     this.boltMesh.count = nb;
     this.stoneMesh.count = ns;
-    this.jarMesh.count = nj;
     this.guMesh.count = ng;
     if (nb) this.boltMesh.instanceMatrix.needsUpdate = true;
     if (ns) this.stoneMesh.instanceMatrix.needsUpdate = true;
-    if (nj) this.jarMesh.instanceMatrix.needsUpdate = true;
     if (ng) this.guMesh.instanceMatrix.needsUpdate = true;
   }
 
   clear() {
     this.list.length = 0;
-    this.boltMesh.count = 0; this.stoneMesh.count = 0;
-    this.jarMesh.count = 0; this.guMesh.count = 0;
+    this.boltMesh.count = 0; this.stoneMesh.count = 0; this.guMesh.count = 0;
   }
 }

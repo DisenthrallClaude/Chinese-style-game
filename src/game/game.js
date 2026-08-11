@@ -10,7 +10,7 @@ import { BuildGrid } from './grid.js';
 import { TowerManager } from './towers.js';
 import { EnemyManager } from './enemies.js';
 import { Projectiles } from './projectiles.js';
-import { Sparks, Rings, Bolts, FloatText } from './fx.js';
+import { Sparks, Rings, Bolts, Fields, FloatText } from './fx.js';
 import { LEVEL, HEART, GATES, PATHS } from '../world/layout.js';
 
 const V = new THREE.Vector3();
@@ -29,7 +29,9 @@ export class Game {
     this.sparks = new Sparks(this.scene, 3600);
     this.smoke = new Sparks(this.scene, 900, THREE.NormalBlending);
     this.rings = new Rings(this.scene, 56);
+    this.fields = new Fields(this.scene, 40);
     this.bolts = new Bolts(this.scene, 26, 9);
+    this.clouds = [];              // 驻留的瘴云
 
     this.state = 'menu';           // menu | build | wave | over
     const R = LEVEL.rules || RULES;
@@ -58,7 +60,6 @@ export class Game {
     this.cursorWorld = new THREE.Vector3();
     this.showLinks = false;
     this.endlessAnnounced = false;
-    this.pools = [];               // 瘴沼：百毒瓮砸出来的那一洼
     this._bindInput();
     this.heartPos = new THREE.Vector3(HEART.x, this.terrain.plazaY + 2.5, HEART.z);
   }
@@ -104,9 +105,9 @@ export class Game {
       return;
     }
     if (k.startsWith('Digit')) {
-      // 一关最多开十二种机关，1~9 各占一种，0 是第十种，再多的只能点
-      const d = parseInt(k.slice(5), 10);
-      const n = d === 0 ? 10 : d;
+      // 机关多过九种，0 顶第十位；再往后只能点了
+      const raw = parseInt(k.slice(5), 10);
+      const n = raw === 0 ? 10 : raw;
       const list = this.towerList;
       if (n >= 1 && n <= list.length) { this.selectTowerType(list[n - 1].id); audio.click(); }
       return;
@@ -278,10 +279,7 @@ export class Game {
       if (!hits.length) return false;
       for (const e of hits) {
         tw.damageDone += enemies.damage(e, dmg, el);
-        if (!e.traits.includes('unslowable')) {
-          e.slow = Math.max(e.slow, st.slow || tw.def.slow);
-          e.slowT = tw.def.slowTime;
-        }
+        this.applySlow(e, st.slow || tw.def.slow, tw.def.slowTime);
       }
       this.rings.spawn(tw.x, tw.y + 0.3, tw.z, range * 0.2, range, 0.55, 0x7ad8ff, 0.55);
       audio.frost();
@@ -328,228 +326,156 @@ export class Game {
       return true;
     }
 
-    /* ---------------- 玄六气 ---------------- */
+    /* ---------------- 六气 ---------------- */
+
+    // 罡风：锥形吹刮，把凶兽往回推。掠空之属吃不住风
     if (kind === 'gust') {
-      // 罡风：正前方一个扇面，打伤之外还把兽群整片推回去
+      if (!target) return false;
       const range = tw.range;
-      const spread = st.cone !== undefined ? st.cone : tw.def.cone;
       const dirX = Math.sin(tw.angle), dirZ = Math.cos(tw.angle);
-      const halfC = Math.cos(spread);
+      const half = Math.cos(st.cone !== undefined ? st.cone : tw.def.cone);
       const hits = enemies.query(tw.x, tw.z, range, (e) => {
         const dx = e.x - tw.x, dz = e.z - tw.z;
         const l = Math.hypot(dx, dz) || 1;
-        return (dx / l) * dirX + (dz / l) * dirZ > halfC;
+        return (dx / l) * dirX + (dz / l) * dirZ > half;
       });
       if (!hits.length) return false;
       const push = st.push !== undefined ? st.push : tw.def.push;
       for (const e of hits) {
-        tw.damageDone += enemies.damage(e, dmg, el);
-        const moved = enemies.shove(e, push);
-        if (moved > 0.3) {
-          this.floats && Math.random() < 0.25 &&
-            this.floats.spawn(e.x, e.y + 2.2 * e.scale, e.z, '退', 'good');
-        }
+        const air = e.kind === 'air';
+        tw.damageDone += enemies.damage(e, dmg * (air ? tw.def.airMult : 1), el);
+        enemies.push(e, push * (air ? 1.5 : 1));
       }
-      // 风刃：几道贴地掠出去的白气
-      for (let i = 0; i < 9; i++) {
-        const a = tw.angle + (Math.random() - 0.5) * spread * 1.8;
-        this.sparks.emit(mz.x, mz.y - 0.2 + Math.random() * 0.8, mz.z, 2, {
-          speed: 4, color: 0xbdf5e4, color2: 0xffffff, size: 9,
-          life: 0.42, gravity: -0.02, up: 0.05,
-          dirX: Math.sin(a), dirY: 0.05, dirZ: Math.cos(a), dirW: 26,
+      audio.gale();
+      // 风：一层贴地扩出去的白环 + 顺风飞的碎屑
+      this.rings.spawn(tw.x, tw.y + 0.8, tw.z, 2, range * 0.9, 0.42, 0xa8f0d8, 0.42);
+      for (let i = 0; i < 10; i++) {
+        const a = tw.angle + (Math.random() - 0.5) * (st.cone || tw.def.cone) * 1.6;
+        this.sparks.emit(mz.x, mz.y, mz.z, 2, {
+          speed: 4, color: 0xd8fff0, color2: 0x7fe8c8, size: 7,
+          life: 0.42, gravity: -0.04, up: 0.2,
+          dirX: Math.sin(a), dirY: 0.06, dirZ: Math.cos(a), dirW: 30,
         });
       }
-      this.rings.spawn(tw.x, tw.y + 0.5, tw.z, range * 0.25, range * 0.92, 0.34, 0xa8f0dc, 0.55);
-      audio.flame();
-      this.rig.shake(0.04);
       return true;
     }
 
+    // 瘴：抛一枚瘴丸出去，落地散成一片毒云
     if (kind === 'venom') {
       if (!target) return false;
-      this.projectiles.fire('jar', mz, target, {
-        speed: tw.def.projSpeed, dmg, el, arc: true, tower: tw,
-        splash: st.splash !== undefined ? st.splash : tw.def.splash,
+      this.projectiles.fire('stone', mz, target, {
+        speed: tw.def.projSpeed, dmg, el, splash: st.splash || tw.def.splash, arc: true, tower: tw,
         venom: st.venom !== undefined ? st.venom : tw.def.venom,
-        venomTime: tw.def.venomTime, poolTime: tw.def.poolTime,
-        sunder: st.sunder !== undefined ? st.sunder : tw.def.sunder,
+        venomTime: tw.def.venomTime,
       });
-      audio.shootStone();
-      this.sparks.emit(mz.x, mz.y, mz.z, 5, {
-        speed: 3, color: 0xa8e030, color2: 0xe8ffa0, size: 5, life: 0.3, gravity: 0.2, up: 0.6,
+      audio.miasma();
+      this.sparks.emit(mz.x, mz.y, mz.z, 8, {
+        speed: 2.4, color: 0xb4e04a, color2: 0x5c7a1c, size: 12, life: 0.7, gravity: -0.06, up: 0.9,
       });
       return true;
     }
 
+    // 蛊：放一只虫出去，附身、加重伤、死则传染
     if (kind === 'swarm') {
       if (!target) return false;
       this.projectiles.fire('gu', mz, target, {
         speed: tw.def.projSpeed, dmg, el, tower: tw,
-        stacks: 1, hop: tw.def.hop,
-        stackDmg: st.stackDmg !== undefined ? st.stackDmg : tw.def.stackDmg,
-        stackMax: st.stackMax !== undefined ? st.stackMax : tw.def.stackMax,
+        infect: tw.def.infect,
+        infectDps: dmg * 0.22,
+        vuln: st.vuln !== undefined ? st.vuln : tw.def.vuln,
+        spread: st.spread !== undefined ? st.spread : tw.def.spread,
       });
-      audio.shootBolt();
-      this.sparks.emit(mz.x, mz.y, mz.z, 6, {
-        speed: 4, color: 0xc86ae8, color2: 0xf0c0ff, size: 4, life: 0.35, gravity: 0.1, up: 0.7,
-      });
+      audio.swarm();
       return true;
     }
 
-    if (kind === 'curse') {
+    // 幽影：不必瞄准，一圈之内皮甲朽坏、脚步发沉
+    if (kind === 'shade') {
       const range = tw.range;
       const hits = enemies.query(tw.x, tw.z, range);
       if (!hits.length) return false;
-      const v = st.vuln !== undefined ? st.vuln : tw.def.vuln;
+      const shred = st.shred !== undefined ? st.shred : tw.def.shred;
       for (const e of hits) {
         tw.damageDone += enemies.damage(e, dmg, el);
-        e.vuln = Math.max(e.vuln, v);
-        e.vulnT = tw.def.vulnTime;
-        this.sparks.emit(e.x, e.y + 1.4 * e.scale, e.z, 3, {
-          speed: 2.4, color: 0x8a6ad0, color2: 0x1a1030, size: 9,
-          life: 0.7, gravity: -0.06, up: 0.5,
+        e.shred = Math.max(e.shred, shred);
+        e.shredT = 2.4;
+        this.applySlow(e, st.slow !== undefined ? st.slow : tw.def.slow, tw.def.slowTime);
+        this.smoke.emit(e.x, e.y + 1.2, e.z, 3, {
+          speed: 2.0, color: 0x2a1f42, color2: 0x7a5ec8, size: 13, life: 0.9, gravity: -0.10, up: 0.8,
         });
       }
-      this.rings.spawn(tw.x, tw.y + 0.25, tw.z, range * 0.15, range, 0.75, 0x9a7ae8, 0.5);
-      audio.frost();
+      this.fields.spawn(tw.x, this.terrain.heightFast(tw.x, tw.z) + 0.10, tw.z,
+        range, 0.9, 0x5a44a0, 0.42);
+      this.rings.spawn(tw.x, tw.y + 0.2, tw.z, range, range * 0.25, 0.5, 0x9a7ae0, 0.5);
+      audio.umbra();
       return true;
     }
 
+    // 虚空：一片地界向内塌陷，把凶兽拖回来路。皮甲挡不住空间撕裂
     if (kind === 'warp') {
       const range = tw.range;
       const hits = enemies.query(tw.x, tw.z, range);
       if (!hits.length) return false;
       const pull = st.pull !== undefined ? st.pull : tw.def.pull;
       for (const e of hits) {
-        V.set(e.x, e.y + 1.2 * e.scale, e.z);
-        tw.damageDone += enemies.damage(e, dmg, el);
-        const moved = enemies.shove(e, pull, { warp: true, ignoreResist: true });
-        if (moved > 0.4) {
-          V2.set(e.x, e.y + 1.2 * e.scale, e.z);
-          // 一道把它拽回去的虚空尾迹
-          this.bolts.spawn(V, V2, { life: 0.34, width: 0.7, jitter: 0.6, color: 0xd8ccff });
-          this.sparks.emit(e.x, e.y + 1.0 * e.scale, e.z, 8, {
-            speed: 6, color: 0xe6dcff, color2: 0x5a4a90, size: 6, life: 0.5, gravity: 0.1, up: 0.8,
-          });
-        }
-      }
-      // 壶口：一圈向内收的白环
-      this.rings.spawn(tw.x, tw.y + 0.4, tw.z, range, range * 0.12, 0.6, 0xe8e0ff, 0.9);
-      audio.skill('freeze');
-      this.rig.shake(0.14);
-      return true;
-    }
-
-    if (kind === 'pierce') {
-      if (!target) return false;
-      const range = tw.range;
-      const w = st.pierceW !== undefined ? st.pierceW : tw.def.pierceW;
-      const dirX = Math.sin(tw.angle), dirZ = Math.cos(tw.angle);
-      const hits = enemies.query(tw.x, tw.z, range, (e) => {
-        const dx = e.x - tw.x, dz = e.z - tw.z;
-        if (dx * dirX + dz * dirZ < 0) return false;                 // 只打身前
-        return Math.abs(dx * dirZ - dz * dirX) <= w;                 // 离轴线够近
-      });
-      if (!hits.length) return false;
-      for (const e of hits) {
-        tw.damageDone += enemies.damage(e, dmg, el);
-        this.sparks.emit(e.x, e.y + 1.0 * e.scale, e.z, 7, {
-          speed: 8, color: 0x8fe4ff, color2: 0xffffff, size: 5, life: 0.32, gravity: 0.5, up: 0.6,
+        tw.damageDone += enemies.damage(e, dmg, el, { trueDamage: true });
+        enemies.push(e, pull);
+        // 星屑从凶兽身上被抽向壶口
+        V.set(e.x, e.y + 1.4, e.z);
+        this.sparks.emit(e.x, e.y + 1.4, e.z, 6, {
+          speed: 3, color: 0xdcd6f6, color2: 0x8a7ad0, size: 5, life: 0.42, gravity: -0.2, up: 0.6,
+          dirX: (tw.x - e.x) * 0.1, dirY: 0.3, dirZ: (tw.z - e.z) * 0.1, dirW: 3,
         });
       }
-      V.copy(mz);
-      V2.set(tw.x + dirX * range, mz.y - 0.3, tw.z + dirZ * range);
-      this.bolts.spawn(V, V2, { life: 0.26, width: 0.85, jitter: 0.45, color: 0x7fd8ff });
-      this.bolts.spawn(V, V2, { life: 0.20, width: 0.35, jitter: 0.15, color: 0xffffff });
-      audio.frost();
-      this.rig.shake(0.05);
+      // 收缩的环：起始半径大、终止半径小，看着是往里塌
+      this.rings.spawn(tw.x, tw.y + 0.3, tw.z, range * 1.05, 1.2, 0.62, 0xd0c8ff, 0.85);
+      this.rings.spawn(tw.x, tw.y + 0.3, tw.z, range * 0.7, 0.8, 0.5, 0xffffff, 0.5);
+      audio.warp();
+      this.rig.shake(0.07);
       return true;
     }
     return false;
   }
 
-  /* ---------------- 瘴沼：百毒瓮砸碎之后留在地上的那一洼 ---------------- */
-  spawnPool(x, z, o) {
-    const gy = this.terrain.heightFast(x, z);
-    this.pools.push({
-      x, y: gy, z, r: o.r, t: 0, life: o.life,
-      venom: o.venom, sunder: o.sunder, tower: o.tower, tick: 0,
-    });
-    if (this.pools.length > 12) this.pools.shift();
-  }
-
-  updatePools(dt) {
-    for (let i = this.pools.length - 1; i >= 0; i--) {
-      const P = this.pools[i];
-      P.t += dt;
-      if (P.t >= P.life) { this.pools.splice(i, 1); continue; }
-      P.tick -= dt;
-      if (P.tick > 0) continue;
-      P.tick = 0.55;
-      const fade = 1 - P.t / P.life;
-      for (const e of this.enemies.query(P.x, P.z, P.r)) {
-        e.venom = Math.max(e.venom, P.venom);
-        e.venomT = Math.max(e.venomT, 2.4);
-        e.sunder = Math.max(e.sunder, P.sunder);
-        e.sunderT = Math.max(e.sunderT, 3.2);
-      }
-      this.rings.spawn(P.x, P.y + 0.16, P.z, P.r * 0.82, P.r, 0.6, 0xa8e030, 0.34 * fade);
-      this.smoke.emit(P.x, P.y + 0.3, P.z, 4, {
-        speed: 1.6, color: 0x6f8a28, color2: 0xc4e060, size: 20,
-        life: 1.6, gravity: -0.04, up: 0.9,
-      });
-    }
-  }
-
-  // 蛊虫改换门庭
-  onGuHop(from, to) {
-    V.set(from.x, from.y + 1.2 * from.scale, from.z);
-    V2.set(to.x, to.y + 1.2 * to.scale, to.z);
-    this.bolts.spawn(V, V2, { life: 0.3, width: 0.3, jitter: 1.1, color: 0xd07aff });
-    this.sparks.emit(to.x, to.y + 1.2 * to.scale, to.z, 10, {
-      speed: 6, color: 0xc86ae8, color2: 0xf0c0ff, size: 4, life: 0.45, gravity: 0.3, up: 0.7,
-    });
-  }
-
   onProjectileHit(p, enemies) {
-    // 毒瓮：碎处腾起瘴气，还在地上留一洼
-    if (p.kind === 'jar') {
+    // 瘴丸：落地散成一片毒云，云会赖在那儿好几息
+    if (p.venom > 0) {
       const gy = this.terrain.heightFast(p.tx, p.tz);
       for (const e of enemies.query(p.tx, p.tz, p.splash)) {
         const d = enemies.damage(e, p.dmg, p.el);
         if (p.tower) p.tower.damageDone += d;
-        e.venom = Math.max(e.venom, p.venom);
-        e.venomT = Math.max(e.venomT, p.venomTime);
-        e.sunder = Math.max(e.sunder, p.sunder);
-        e.sunderT = Math.max(e.sunderT, p.venomTime);
       }
-      this.spawnPool(p.tx, p.tz, {
-        r: p.splash, life: p.poolTime, venom: p.venom * 0.6, sunder: p.sunder, tower: p.tower,
+      this.clouds.push({
+        x: p.tx, z: p.tz, r: p.splash, dps: p.venom, life: p.venomTime,
+        t: 0, tower: p.tower, tick: 0,
       });
-      this.rings.spawn(p.tx, gy + 0.2, p.tz, 0.5, p.splash * 1.35, 0.5, 0xb8e83c, 0.9);
-      this.sparks.emit(p.tx, gy + 0.5, p.tz, 30, {
-        speed: 9, color: 0x88a828, color2: 0xe8ff90, size: 7, life: 0.9, gravity: 0.7, up: 1.0,
-      });
-      this.smoke.emit(p.tx, gy + 0.6, p.tz, 12, {
-        speed: 3, color: 0x6f8a28, color2: 0xbcd868, size: 24, life: 1.9, gravity: -0.05, up: 1.0,
+      this.fields.spawn(p.tx, gy + 0.14, p.tz, p.splash, p.venomTime, 0x8ac02a, 0.62);
+      this.rings.spawn(p.tx, gy + 0.2, p.tz, 0.6, p.splash * 1.3, 0.55, 0xc4f060, 0.7);
+      this.smoke.emit(p.tx, gy + 0.5, p.tz, 22, {
+        speed: 3.2, color: 0x6a8a20, color2: 0xc4f060, size: 26, life: 2.2, gravity: -0.03, up: 0.7,
       });
       audio.hit();
       return;
     }
-    // 蛊：叮上去，层数越叠越疼
-    if (p.kind === 'gu') {
-      if (!p.target || !p.target.alive) return;
-      const e = p.target;
+    // 蛊虫：钻进去就不出来了。原定的宿主半路死了，就近再找一个 ——
+    // 虫已经放出去了，不该白飞一趟
+    if (p.infect > 0) {
+      let e = p.target && p.target.alive ? p.target : null;
+      if (!e) {
+        const near = enemies.query(p.x, p.z, 5.0);
+        e = near.length ? near[0] : null;
+      }
+      if (!e) return;
       const d = enemies.damage(e, p.dmg, p.el);
       if (p.tower) p.tower.damageDone += d;
-      e.gu = Math.min(p.stackMax, e.gu + p.stacks);
-      e.guT = 6.0;
-      e.guDmg = Math.max(e.guDmg, p.stackDmg);
-      e.guHop = p.hop;
-      e.guMax = p.stackMax;
-      this.sparks.emit(e.x, e.y + 1.2 * e.scale, e.z, 5 + e.gu * 2, {
-        speed: 5, color: 0xc86ae8, color2: 0x60208a, size: 4, life: 0.4, gravity: 0.4, up: 0.6,
+      e.infect = Math.max(e.infect, p.infect);
+      e.infectDps = Math.max(e.infectDps, p.infectDps);
+      e.infectVuln = Math.max(e.infectVuln, p.vuln);
+      e.infectSpread = Math.max(e.infectSpread, p.spread);
+      this.sparks.emit(e.x, e.y + 1.2, e.z, 14, {
+        speed: 6, color: 0xe05ab4, color2: 0xffb0e8, size: 5, life: 0.5, gravity: 0.2, up: 0.7,
       });
+      this.rings.spawn(e.x, e.y + 0.2, e.z, 0.4, 3.0, 0.4, 0xe05ab4, 0.7);
       audio.hit();
       return;
     }
@@ -614,7 +540,7 @@ export class Game {
       const gy = this.terrain.heightFast(x, z);
       for (const e of this.enemies.query(x, z, s.radius)) {
         e.freeze = Math.max(e.freeze, 3.5);
-        if (!e.traits.includes('unslowable')) { e.slow = Math.max(e.slow, 0.5); e.slowT = 5.5; }
+        this.applySlow(e, 0.5, 5.5);
         this.enemies.damage(e, 40, 'water');
       }
       this.rings.spawn(x, gy + 0.2, z, 1, s.radius * 2.2, 1.1, 0x9fe0ff, 0.9);
@@ -756,30 +682,6 @@ export class Game {
         }
       }
     }
-    if (e.traits.includes('plague')) {
-      // 蜚：所行之国大疫 —— 近旁的机关害起病来，射速大减
-      for (const t of this.towers.towers) {
-        const dx = t.x - e.x, dz = t.z - e.z;
-        if (dx * dx + dz * dz < 18 * 18) {
-          t.hobble = Math.max(t.hobble, 4.5);
-          this.smoke.emit(t.x, t.y + 1.4, t.z, 6, {
-            speed: 2.2, color: 0x7a8a34, color2: 0xc8d878, size: 16, life: 1.2, gravity: -0.05, up: 0.8,
-          });
-        }
-      }
-    }
-    if (e.traits.includes('dim')) {
-      // 罔象、鬼车：掩至而人不觉 —— 机关看不远，射程缩水
-      for (const t of this.towers.towers) {
-        const dx = t.x - e.x, dz = t.z - e.z;
-        if (dx * dx + dz * dz < 20 * 20) {
-          t.blind = Math.max(t.blind, 4.0);
-          this.smoke.emit(t.x, t.y + 1.6, t.z, 5, {
-            speed: 2.0, color: 0x2a2038, color2: 0x6a5aa0, size: 18, life: 1.4, gravity: -0.04, up: 0.7,
-          });
-        }
-      }
-    }
     if (e.traits.includes('shock')) {
       let n = 0;
       for (const t of this.towers.towers) {
@@ -793,6 +695,47 @@ export class Game {
       }
       if (n) audio.thunder();
     }
+  }
+
+  /* ---- 上减速：地脉的加成在这里统一算掉 ----
+     幽都寒渊冰面极滑，一切减速加五成半；炎火之山与归墟海眼反过来打折。 */
+  applySlow(e, amount, time) {
+    if (!e || e.traits.includes('unslowable')) return;
+    const bonus = (LEVEL.rules && LEVEL.rules.slowBonus) || 0;
+    const v = clamp(amount * (1 + bonus), 0, 0.92);
+    if (v <= 0) return;
+    e.slow = Math.max(e.slow, v);
+    e.slowT = Math.max(e.slowT, time);
+  }
+
+  /* ---- 驻留的瘴云：每半息给云里的凶兽加一层毒 ---- */
+  updateClouds(dt) {
+    for (let i = this.clouds.length - 1; i >= 0; i--) {
+      const c = this.clouds[i];
+      c.t += dt;
+      if (c.t >= c.life) { this.clouds.splice(i, 1); continue; }
+      c.tick -= dt;
+      if (c.tick > 0) continue;
+      c.tick = 0.5;
+      const r2 = c.r * c.r;
+      for (const e of this.enemies.all) {
+        if (!e.alive) continue;
+        const dx = e.x - c.x, dz = e.z - c.z;
+        if (dx * dx + dz * dz > r2) continue;
+        // 层数越叠越高，但封了顶，免得一炉打天下
+        e.venomStack = Math.min(6, e.venomStack + 1);
+        e.venom = Math.max(e.venom, c.dps);
+        e.venomT = 2.6;
+      }
+    }
+  }
+
+  // 宿主一死，蛊虫散开找下一个
+  onGuSpread(e, n) {
+    this.sparks.emit(e.x, e.y + 1.4, e.z, 22 + n * 6, {
+      speed: 11, color: 0xe05ab4, color2: 0xffd0f4, size: 5, life: 0.7, gravity: 0.1, up: 0.8,
+    });
+    this.rings.spawn(e.x, e.y + 0.3, e.z, 0.6, 12, 0.5, 0xe05ab4, 0.7);
   }
 
   bossFlipTime() {
@@ -811,7 +754,7 @@ export class Game {
     this.towers.clear();
     this.enemies.clear();
     this.projectiles.clear();
-    this.pools.length = 0;
+    this.clouds.length = 0;
     const R = LEVEL.rules || RULES;
     this.gold = R.startGold;
     this.maxHeart = R.startHeart;
@@ -844,7 +787,7 @@ export class Game {
     this.towers.dispose();
     this.enemies.dispose();
     this.projectiles.clear();
-    this.pools.length = 0;
+    this.clouds.length = 0;
     this.grid.dispose();
 
     Object.assign(this, ctx);
@@ -885,8 +828,8 @@ export class Game {
     this.spawnQueue = [];
     this.enemies.clear();
     this.projectiles.clear();
-    this.pools.length = 0;
     this.towers.clear();
+    this.clouds.length = 0;
     this.selected = null;
     this.selectedTowerId = null;
     this.armedSkill = null;
@@ -965,14 +908,15 @@ export class Game {
       if (this.surge > 0) this.surge = Math.max(0, this.surge - dt);
 
       this.towers.update(dt, t, this.enemies, this.showLinks || buildMode);
+      this.updateClouds(dt);
       this.enemies.update(dt, t);
       this.projectiles.update(dt, this.enemies);
-      this.updatePools(dt);
     }
 
     this.sparks.update(t);
     this.smoke.update(t);
     this.rings.update(t);
+    this.fields.update(t);
     this.bolts.update(rawDt, this.camera);
     if (this.floats) this.floats.update(rawDt);
 

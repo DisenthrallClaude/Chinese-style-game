@@ -165,7 +165,6 @@ export let WATER_Y = -1.9;
 export let WATER_KIND = 'river';
 export let WATER_SHEET = false;
 export let BRIDGE = null;
-export let BRIDGES = [];
 export let PLAZA = { x0: -50, x1: 50, z0: 0, z1: 50 };
 export let VALLEY_C = { x: 0, z: 0 };
 export let VALLEY_R = 118;
@@ -187,39 +186,6 @@ export function inFootprint(x, z, pad = 0) {
     if (Math.abs(lx) < f.rx + pad && Math.abs(lz) < f.rz + pad) return true;
   }
   return false;
-}
-
-/* ---------------------------------------------------------------- 桥面
-   桥不再夯成一条土坝：地形底下老老实实还是河床，桥面另立一份高程。
-   凶兽与光标走 walkY = max(地形, 桥面)，水道于是能从桥拱底下连贯地淌过去。 */
-export const DECKS = [];
-
-// d: { x, z, ry, span, halfW, y0, y1, rise, feather }
-export function addDeck(d) { DECKS.push({ feather: 2.2, ...d }); }
-
-// 落在任一桥面上就返回桥面高度，否则返回 null
-export function deckY(x, z) {
-  let best = null;
-  for (let i = 0; i < DECKS.length; i++) {
-    const d = DECKS[i];
-    const c = Math.cos(d.ry), s = Math.sin(d.ry);
-    const dx = x - d.x, dz = z - d.z;
-    // architecture 里的 rot() 是 [cos, sin; -sin, cos]，这里取它的逆
-    const lx = c * dx - s * dz, lz = s * dx + c * dz;
-    const half = d.span / 2;
-    if (Math.abs(lx) > d.halfW + d.feather || Math.abs(lz) > half) continue;
-    const t = lz / d.span + 0.5;
-    const y = d.y0 + (d.y1 - d.y0) * t + Math.sin(Math.PI * t) * d.rise;
-    if (best === null || y > best) best = y;
-  }
-  return best;
-}
-
-// 走在世界上的实际高度：地面与桥面取高者
-export function walkY(groundY, x, z) {
-  if (!DECKS.length) return groundY;
-  const d = deckY(x, z);
-  return d === null ? groundY : Math.max(groundY, d);
 }
 
 export function distToAnyPath(x, z) {
@@ -259,13 +225,11 @@ export function applyLevel(indexOrDef) {
   GATES = L.gates.map(g => ({ x: g.x, z: g.z, name: g.name, y: 0 }));
   HEART = { x: L.heart.x, z: L.heart.z };
   PLAZA = { ...L.plaza };
-  BRIDGES = (L.bridges || (L.bridge ? [L.bridge] : [])).map(b => ({ ...b }));
-  BRIDGE = BRIDGES[0] || null;
+  BRIDGE = L.bridge ? { ...L.bridge } : null;
   VALLEY_C = { ...L.geo.center };
   VALLEY_R = L.geo.innerR;
   BUILD_R = L.geo.buildR;
 
   FOOTPRINTS.length = 0;
-  DECKS.length = 0;
   return L;
 }

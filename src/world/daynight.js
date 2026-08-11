@@ -334,6 +334,13 @@ export class DayNight {
     }
     if (c.cloudCover) s.cover = clamp(s.cover + c.cloudCover, 0, 0.92);
     if (c.exposure) s.exposure *= c.exposure;
+    // 雪原、盐碱这类地表本身反光就狠的关卡：光与辉光都得往回收，
+    // 否则整幅画糊成一片白，屋子和地分不出来
+    if (c.lightMul) { s.sunI *= c.lightMul; s.hemiI *= c.lightMul; s.fillI *= c.lightMul; }
+    if (c.bloomMul) s.bloom *= c.bloomMul;
+    if (c.bloomThr) s.bloomThr = c.bloomThr;
+    if (c.contrast) s.contrast *= c.contrast;
+    if (c.sat) s.sat *= c.sat;
   }
 
   _updateSunScreen(camera) {
